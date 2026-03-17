@@ -1,0 +1,29 @@
+# 文档
+desc
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+
+# Node
+node_modules/
+dist/
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+
+# Project specific
+static/
+media/
+
+# env
+*.env
+
+# other
+.agent
+design-system/
+desc/
