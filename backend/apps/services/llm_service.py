@@ -49,8 +49,8 @@ class LLMService:
         - CHAT: 普通的吐槽、寒暄或日常对话，没有明显的核心心理诉求。
 
         提取规范：
-        1. 症状 (symptoms): 简短短语，如 ["考前失眠", "手抖", "回避社交"]。
-        2. 心理问题 (problem_name): 宏伟概括。示例参考: '期末挂科极度焦虑', '人际关系冲突', '社交恐惧', '抑郁倾向'。
+        1. 症状 (symptoms): 必须是原子化的、通用的症状核心词，如 ["失眠", "心慌", "焦虑", "自残", "反复检查"]。不要提取过于口语化的长句。
+        2. 心理问题 (problem_name): 宏观概括。示例参考: '期末挂科极度焦虑', '人际关系冲突', '社交恐惧', '抑郁倾向'。
 
         示例：
         输入："我最近快考试了，整晚睡不着，感觉要是挂科我就完了，真想一了百了"
@@ -87,31 +87,39 @@ class LLMService:
         根据用户的输入和检索到的图谱上下文（结构化 JSON树），生成结构化的回复。
         """
         system_prompt = """
-        你是一名专业且富有共情能力的校园心理辅导员。你正在通过文字与学生对话。
-        
-        你的回答准则：
-        1. 【核心立场】：始终站到学生这一边。保持温暖、接纳、无评判的态度。回复尽量简短（300字内）。
-        2. 【严禁行为】：严禁推荐任何具体的药品名称；严禁做出医疗诊断。
-        3. 【结构化输出】：
-           - 你必须将回复拆分为：自然语言对话 (content) 和 结构化卡片 (cards)。
-           - content：仅包含共情、安抚和自然引导（不要在这里罗列具体的步骤、政策细节或长篇大论）。
-           - cards：如果提供了 [检索到的参考知识]，你需要将其中的客观资源（治疗方案、应对技巧、政策、机构）提取出来。
-             * TREATMENT 类型：提取具体的操作步骤。
-             * POLICY 类型：提取政策名称及其负责部门 (org)。
-        
-        注意：你必须且只能返回合法的 JSON 格式。
-        """
+你是 SH MindStation 心理健康助手。基于[检索到的参考知识]提取客观信息并返回 JSON。
 
+[提取规则]
+1. 治疗方案：将 `treatments` 列表映射为 `type: "TREATMENT"` 的卡片。
+   - `title`: 方案名称 (name)。
+   - `content`: 结合方案原理 (rationale) 和 `skills` 下技巧的名称与步骤。
+2. 校园政策：将 `campus_context` 映射为 `type: "POLICY"` 的卡片。
+   - `title`: 政策名称 (policy_name)。
+   - `content`: 政策事项 (policy_detail)。
+   - `extra_info`: 包含 {"org": "部门名称", "location": "办公地点"}。
+
+[对话准则]
+- `content` 字段仅用于情感共情和简短引导，不要罗列数据。
+- 即使没有知识，也必须返回 JSON 结构（cards 可为空）。
+- 严禁药物推荐，严禁医疗诊断。
+"""
+        
         context_str = json.dumps(graph_context, ensure_ascii=False) if graph_context else "没有找到相关的图谱背景知识。"
         
         format_example = {
-            "content": "抱歉听到这个消息，考研失利确实让人难过...",
+            "content": "听到你描述的状态我深感理解，这里有一些专业建议...",
             "cards": [
                 {
+                    "type": "TREATMENT",
+                    "title": "方案名称",
+                    "content": "基于某原理，建议尝试某技巧：具体步骤...",
+                    "extra_info": {}
+                },
+                {
                     "type": "POLICY",
-                    "title": "毕业生档案留存政策",
-                    "content": "二战学生可申请档案留校两年...",
-                    "extra_info": {"org": "教务处"}
+                    "title": "政策名称",
+                    "content": "政策具体说明",
+                    "extra_info": {"org": "教务处", "location": "行政楼"}
                 }
             ]
         }
@@ -127,10 +135,18 @@ class LLMService:
                 messages=messages,
                 response_format={"type": "json_object"},
                 temperature=0.7,
-                max_tokens=1000
+                max_tokens=1500
             )
             content_json = response.choices[0].message.content
-            return LLMResponse.model_validate_json(content_json)
+            # Remove control characters that break JSON parsing
+            import re
+            clean_json = re.sub(r'[\x00-\x1F\x7F]', '', content_json)
+            try:
+                data = json.loads(clean_json)
+                return LLMResponse.model_validate(data)
+            except Exception as e:
+                logger.error(f"JSON Parse Error: {str(e)}. Raw: {clean_json}")
+                raise e
         except Exception as e:
              logger.error(f"Error generating response: {str(e)}")
              return LLMResponse(content="抱歉同学，系统遇到些网络延迟。如果感到严重不适，请立刻拨打校园 24 小时心理干预热线。")

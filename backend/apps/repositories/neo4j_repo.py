@@ -38,8 +38,8 @@ class Neo4jRepository:
             severity: p.`严重程度`,
 
             symptoms: [ (p)-[r1:`具有症状`]->(s:`症状`) | s {
+                .uuid,
                 name: s.`名称`,
-                category: s.`类别`,
                 weight: r1.`匹配权重`,
                 
                 risk_info: head([ (s)-[:`触发预警`]->(risk:`风险等级`)-[:`执行预案`]->(e:`应急预案`) | {
@@ -47,22 +47,25 @@ class Neo4jRepository:
                     action: e.`干预话术`,
                     contact: e.`资源`
                 }])
-            }],
+            }][..10],
 
             treatments: [ (p)-[r2:`治疗方案`]->(t:`治疗方案`) | t {
+                .uuid,
                 name: t.`名称`,
-                rationale: t.`原理说明`,
+                rationale: t.`原理`,
                 effectiveness: r2.`有效性`,
                 
                 skills: [ (t)-[:`包含技巧`]->(c:`应对技巧`) | c {
+                    .uuid,
                     name: c.`名称`,
-                    steps: c.`操作步骤`
-                }]
-            }],
+                    steps: c.`步骤`
+                }][..3]
+            }][..5],
 
             campus_context: head([ (p)-[:`关联政策`]->(pol:`校园政策`)-[:`负责部门`]->(org:`校园机构`) | {
+                policy_uuid: pol.uuid,
                 policy_name: pol.`名称`,
-                policy_detail: pol.`事项说明`,
+                policy_detail: pol.`事项`,
                 org_name: org.`名称`,
                 location: org.`办公地点`,
                 contact: org.`联系方式`
@@ -86,16 +89,24 @@ class Neo4jRepository:
     def find_problem_by_symptoms(self, symptoms: list[str]) -> str | None:
         """
         根据一组症状名称，在图谱中反查最匹配的心理问题名称。
-        采用统计匹配个数的方式进行简单的模糊定位。
+        采用评分机制进行模糊定位。
         """
         if not symptoms:
             return None
             
         query = '''
         UNWIND $symptoms AS sym_name
-        MATCH (s:`症状`) WHERE s.`名称` CONTAINS sym_name OR sym_name CONTAINS s.`名称`
+        MATCH (s:`症状`)
+        WITH s, sym_name,
+             CASE 
+                WHEN s.`名称` = sym_name THEN 10
+                WHEN s.`名称` CONTAINS sym_name OR sym_name CONTAINS s.`名称` THEN 5
+                WHEN size(sym_name) >= 2 AND (s.`名称` CONTAINS substring(sym_name, 0, 2) OR sym_name CONTAINS substring(s.`名称`, 0, 2)) THEN 2
+                ELSE 0 
+             END AS match_score
+        WHERE match_score > 0
         MATCH (p:`心理问题`)-[:`具有症状`]->(s)
-        RETURN p.`名称` AS name, count(distinct s) AS score
+        RETURN p.`名称` AS name, sum(match_score) AS score
         ORDER BY score DESC
         LIMIT 1
         '''
