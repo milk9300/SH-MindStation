@@ -58,6 +58,9 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+# CORS Authorization for separate frontend server (Vue/Vite)
+CORS_ALLOW_ALL_ORIGINS = True
+
 ROOT_URLCONF = "backend_project.urls"
 
 TEMPLATES = [

@@ -128,6 +128,53 @@ class AssessmentRecord(models.Model):
         ordering = ['-created_at']
 
 
+class Article(models.Model):
+    """
+    biz_article: 科普文章表 (CMS)
+    """
+    id = models.CharField("文章ID", primary_key=True, max_length=64) # 与 Neo4j UUID 一致
+    title = models.CharField("文章标题", max_length=200)
+    cover_image = models.CharField("封面图URL", max_length=500, null=True, blank=True)
+    content = models.TextField("文章内容") # 富文本或 Markdown
+    author = models.CharField("作者/机构", max_length=50, default='心理中心')
+    status = models.CharField("发布状态", max_length=20, default='published') # draft / published
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+
+    class Meta:
+        db_table = 'biz_article'
+        ordering = ['-created_at']
+
+
+class AssessmentScale(models.Model):
+    """
+    biz_assessment_scale: 心理量表主表
+    """
+    id = models.CharField("量表ID", primary_key=True, max_length=64) # 与 Neo4j UUID 一致
+    name = models.CharField("量表名称", max_length=100)
+    description = models.TextField("量表指导语", null=True, blank=True)
+    question_count = models.IntegerField("题目总数", default=0)
+    scoring_rules = models.JSONField("计分与评级规则", default=list) # [{"min": 0, "max": 10, "result": "正常"}]
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+
+    class Meta:
+        db_table = 'biz_assessment_scale'
+        ordering = ['-created_at']
+
+
+class AssessmentQuestion(models.Model):
+    """
+    biz_assessment_question: 量表题目表
+    """
+    scale = models.ForeignKey(AssessmentScale, on_delete=models.CASCADE, related_name='questions')
+    sort_order = models.IntegerField("题号")
+    content = models.CharField("题干内容", max_length=500)
+    options = models.JSONField("选项与分值") # [{"label": "没有", "score": 1}]
+
+    class Meta:
+        db_table = 'biz_assessment_question'
+        ordering = ['sort_order']
+
+
 class AuditLog(models.Model):
     """
     sys_audit_log: 系统审计日志表

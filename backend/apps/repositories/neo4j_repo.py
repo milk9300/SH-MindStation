@@ -69,7 +69,21 @@ class Neo4jRepository:
                 org_name: org.`名称`,
                 location: org.`办公地点`,
                 contact: org.`联系方式`
-            }])
+            }]),
+
+            recommended_articles: [ (p)-[:`推荐文章`]->(art:`心理文章`) | art {
+                .uuid,
+                name: art.`名称`,
+                author: art.`作者`,
+                cover: art.`封面图`
+            }],
+
+            assessments: [ (p)-[:`具有症状`]->(s:`症状`)-[:`推荐测评`]->(scale:`测评量表`) | scale {
+                .uuid,
+                name: scale.`名称`,
+                desc: scale.`描述`,
+                total_questions: scale.`题目总数`
+            }]
             
         } AS structured_json
         '''
