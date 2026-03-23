@@ -10,7 +10,7 @@
     <el-table :data="tableData" style="width: 100%" v-loading="loading">
       <el-table-column prop="created_at" label="预警时间" width="180">
         <template #default="scope">
-          {{ new Date(scope.row.created_at).toLocaleString() }}
+          {{ formatDateTime(scope.row.created_at) }}
         </template>
       </el-table-column>
       <el-table-column label="用户/学号" width="180">
@@ -102,6 +102,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import apiClient from '../utils/api'
+import { formatDateTime } from '../utils/format'
 
 const tableData = ref([])
 const loading = ref(false)

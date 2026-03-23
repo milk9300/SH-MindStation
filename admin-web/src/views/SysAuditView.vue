@@ -18,7 +18,7 @@
       <el-table :data="filteredLogs" style="width: 100%" v-loading="loading" stripe size="small">
         <el-table-column prop="created_at" label="操作时间" width="180">
           <template #default="scope">
-            {{ formatTime(scope.row.created_at) }}
+            {{ formatDateTime(scope.row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column prop="admin_name" label="操作人" width="120">
@@ -51,6 +51,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import apiClient from '../utils/api'
+import { formatDateTime } from '../utils/format'
 
 const loading = ref(false)
 const filterModule = ref('')
@@ -73,10 +74,7 @@ const fetchLogs = async () => {
   }
 }
 
-const formatTime = (timeStr: string) => {
-  const d = new Date(timeStr)
-  return d.toLocaleString()
-}
+
 
 const getModuleTag = (mod: string) => {
   const map: any = { 'KG_EDITOR': 'warning', 'ALERTS': 'danger', 'SESSIONS': 'primary' }

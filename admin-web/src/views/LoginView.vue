@@ -53,9 +53,11 @@ import { useRouter } from 'vue-router'
 import { User, Lock, Connection } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import apiClient from '../utils/api'
+
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const loginFormRef = ref<FormInstance>()
 const loading = ref(false)
 
@@ -76,19 +78,15 @@ const handleLogin = async () => {
     if (valid) {
       loading.value = true
       try {
-        const res: any = await apiClient.post('/admin/login/', {
+        const res = await authStore.login({
           username: loginForm.username,
           password: loginForm.password
         })
         
-        // 保存 token 和用户信息
-        localStorage.setItem('admin_token', res.token)
-        localStorage.setItem('admin_user', JSON.stringify(res.user))
-        
         ElMessage.success('欢迎回来，' + (res.user.real_name || '管理员'))
         router.push('/dashboard')
       } catch (e: any) {
-        // Axios 拦截器已经弹出了对应的错误提示，此处不需要额外弹窗除非想定制
+        // Axios 拦截器已经弹出了对应的错误提示
       } finally {
         loading.value = false
       }

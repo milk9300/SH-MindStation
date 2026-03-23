@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "type-check": "vue-tsc --noEmit -p tsconfig.app.json --composite false",
+    "build": "npm run type-check && vite build",
+    "preview": "vite preview",
+    "lint": "echo \"Linting not yet configured\""
   },
   "dependencies": {
     "@antv/g6": "^4.8.24",

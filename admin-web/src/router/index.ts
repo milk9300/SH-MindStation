@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import type { RouteRecordRaw } from 'vue-router'
+import type { RouteRecordRaw, RouteLocationNormalized, NavigationGuardNext } from 'vue-router'
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -58,10 +58,12 @@ const router = createRouter({
   routes
 })
 
+import { useAuthStore } from '../stores/auth'
+
 // 全局路由守卫：未登录直接拦截并重定向到登录页
-router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('admin_token')
-  if (to.path !== '/login' && !token) {
+router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) => {
+  const authStore = useAuthStore()
+  if (to.path !== '/login' && !authStore.isLoggedIn) {
     next('/login')
   } else {
     next()
