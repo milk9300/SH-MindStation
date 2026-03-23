@@ -25,12 +25,15 @@ class Neo4jRepository:
 
     def get_psychological_problem_graph(self, problem_name: str) -> dict:
         """
-        根据名称查询心理问题全貌及其多跳关系，直接组装为 JSON 树
-        此方法体现了在图谱端完成中英属性映射与嵌套推导的设计初衷。
+        根据名称检索心理问题（支持模糊匹配），直接组装为 JSON 树。
         """
+        # 使用模糊匹配 (CONTAINS) 增加鲁棒性，即便 LLM 提取的词不完全等于节点名
         query = '''
-        MATCH (p:`心理问题` {`名称`: $problem_name})
-
+        MATCH (p:`心理问题`)
+        WHERE p.`名称` CONTAINS $problem_name OR $problem_name CONTAINS p.`名称`
+        WITH p LIMIT 1
+        
+        MATCH (p)
         RETURN p {
             .uuid,
             name: p.`名称`,

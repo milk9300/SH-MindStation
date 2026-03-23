@@ -97,6 +97,7 @@ const handleCall = () => {
 	line-height: 1.8;
 	margin-bottom: 30rpx;
 	font-weight: 500;
+	white-space: pre-wrap;
 }
 
 .risk-indicator {

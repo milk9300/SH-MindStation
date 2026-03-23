@@ -41,13 +41,18 @@
 				</view>
 			</view>
 			
-			<!-- 加载动画 -->
+			<!-- “思考中” 状态优化 -->
 			<view v-if="isLoading" class="message-item ai">
 				<view class="avatar ai-avatar">🌱</view>
-				<view class="bubble ai typing">
-					<view class="dot"></view>
-					<view class="dot"></view>
-					<view class="dot"></view>
+				<view class="message-main">
+					<view class="bubble ai thinking-bubble">
+						<view class="dot-loader">
+							<view class="dot"></view>
+							<view class="dot"></view>
+							<view class="dot"></view>
+						</view>
+						<text class="thinking-text">SH 正在思考中...</text>
+					</view>
 				</view>
 			</view>
 		</scroll-view>
@@ -226,7 +231,7 @@ const sendMessage = async () => {
 	border-radius: 28rpx;
 	font-size: 28rpx;
 	line-height: 1.6;
-	word-break: break-all;
+	white-space: pre-wrap;
 	width: fit-content;
 	max-width: 100%;
 	
@@ -244,26 +249,39 @@ const sendMessage = async () => {
 	}
 }
 
-// 输入中动画
-.typing {
+// 思考中动画增强
+.thinking-bubble {
 	display: flex;
 	align-items: center;
-	gap: 10rpx;
-	padding: 30rpx 36rpx;
-	.dot {
-		width: 14rpx;
-		height: 14rpx;
-		background: $sh-primary;
-		border-radius: 50%;
-		animation: bounce 1.4s infinite ease-in-out both;
-		&:nth-child(1) { animation-delay: -0.32s; }
-		&:nth-child(2) { animation-delay: -0.16s; }
+	gap: 16rpx;
+	background: linear-gradient(to right, #ffffff, #f9fdfb) !important;
+	border: 1px solid rgba($sh-primary, 0.1);
+	
+	.dot-loader {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		.dot {
+			width: 10rpx;
+			height: 10rpx;
+			background: $sh-primary;
+			border-radius: 50%;
+			animation: bounce 1.4s infinite ease-in-out both;
+			&:nth-child(1) { animation-delay: -0.32s; }
+			&:nth-child(2) { animation-delay: -0.16s; }
+		}
+	}
+	
+	.thinking-text {
+		font-size: 24rpx;
+		color: $sh-text-sub;
+		font-style: italic;
 	}
 }
 
 @keyframes bounce {
-	0%, 80%, 100% { transform: scale(0); }
-	40% { transform: scale(1); }
+	0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+	40% { transform: scale(1.2); opacity: 1; }
 }
 
 // 结构化卡片区域

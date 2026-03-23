@@ -14,9 +14,9 @@ class GraphService:
         根据 LLM 识别出的意图和问题，从图谱获取完整的问诊知识树。
         增加短路逻辑：如果是纯聊天或专门查政策，走专用分流通道以节省 IO 并提高准确率。
         """
-        # 1. 纯日常聊天，直接短路（极大节省图数据库 IO）
-        if intent.intent_type == "CHAT":
-            logger.info("Intent is CHAT, short-circuiting graph retrieval.")
+        # 1. 纯日常聊天且无明确问题，直接短路（极大节省图数据库 IO）
+        if intent.intent_type == "CHAT" and not intent.problem_name:
+            logger.info("Intent is CHAT and no problem detected, short-circuiting graph retrieval.")
             return None
             
         # 2. 专门查询校园政策，走 Policy 检索链路

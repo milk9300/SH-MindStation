@@ -9,10 +9,11 @@
 		</view>
 		<view class="article-image">
 			<image 
-				v-if="data.extra_info && data.extra_info.image" 
-				:src="data.extra_info.image" 
+				v-if="imageUrl && !imageError" 
+				:src="imageUrl" 
 				mode="aspectFill"
 				class="img"
+				@error="handleImageError"
 			></image>
 			<view v-else class="image-placeholder">
 				<text class="placeholder-icon">🖼️</text>
@@ -22,6 +23,8 @@
 </template>
 
 <script setup>
+import { computed, ref } from 'vue'
+
 const props = defineProps({
 	data: {
 		type: Object,
@@ -29,8 +32,26 @@ const props = defineProps({
 	}
 })
 
+const imageError = ref(false)
+
+// 基础媒体地址，实际应从统一配置文件读取，此处暂与 request.js 保持一致
+const MEDIA_BASE_URL = 'http://127.0.0.1:8000/'
+
+const imageUrl = computed(() => {
+	const img = props.data.extra_info?.image
+	if (!img) return ''
+	// 如果是完整 URL 则直接返回
+	if (img.startsWith('http')) return img
+	// 否则拼接后端媒体路径
+	return MEDIA_BASE_URL + (img.startsWith('/') ? img.slice(1) : img)
+})
+
+const handleImageError = () => {
+	imageError.value = true
+}
+
 const handleNavigate = () => {
-	// 模拟跳转，实际项目中可以根据 data.extra_info.url 跳转
+	// 模拟跳转，实际项目中可以根据 data.extra_info.id 跳转
 	uni.navigateTo({
 		url: '/pages/discovery/article-detail?id=' + (props.data.extra_info?.id || 'default'),
 		fail: () => {
@@ -89,6 +110,7 @@ const handleNavigate = () => {
 	.meta-text {
 		font-size: 22rpx;
 		color: $sh-text-sub;
+		white-space: pre-wrap;
 	}
 }
 

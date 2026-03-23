@@ -84,6 +84,7 @@ const handleCopyLocation = () => {
 		color: $sh-text-main;
 		line-height: 1.6;
 		margin-bottom: 24rpx;
+		white-space: pre-wrap;
 	}
 }
 
