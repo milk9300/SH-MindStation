@@ -80,32 +80,63 @@
               </el-col>
             </el-row>
             
-            <el-form-item label="详细描述 / 内容摘要">
-              <el-input
-                v-model="selectedNode.properties.描述"
-                v-if="selectedNode.properties.描述 !== undefined"
-                type="textarea"
-                :rows="4"
-              />
-              <el-input
-                v-model="selectedNode.properties.原理"
-                v-else-if="selectedNode.properties.原理 !== undefined"
-                type="textarea"
-                :rows="4"
-              />
-              <el-input
-                v-model="selectedNode.properties.诊断标准"
-                v-else-if="selectedNode.properties.诊断标准 !== undefined"
-                type="textarea"
-                :rows="4"
-              />
-              <el-input
-                v-else
-                v-model="selectedNode.description"
-                type="textarea"
-                :rows="4"
-              />
-            </el-form-item>
+            <!-- 动态 Schema 表单区域 -->
+            <div class="dynamic-form-container mt-4">
+              <el-divider content-position="left">扩展业务属性</el-divider>
+              
+              <el-form-item 
+                v-for="field in currentSchema.fields" 
+                :key="field.prop" 
+                :label="field.label"
+                class="schema-item"
+              >
+                <!-- 评分类型 -->
+                <el-rate 
+                  v-if="field.type === 'rate'" 
+                  v-model="selectedNode.properties[field.prop]" 
+                  :max="5"
+                  show-score
+                  text-color="#ff9900"
+                />
+                
+                <!-- 多行文本 -->
+                <el-input
+                  v-else-if="field.type === 'textarea'"
+                  v-model="selectedNode.properties[field.prop]"
+                  type="textarea"
+                  :rows="4"
+                  :placeholder="field.placeholder || `请输入${field.label}...`"
+                />
+
+                <!-- 下拉选择 -->
+                <el-select
+                  v-else-if="field.type === 'select'"
+                  v-model="selectedNode.properties[field.prop]"
+                  class="w-full"
+                >
+                  <el-option
+                    v-for="opt in field.options"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+
+                <!-- 数字输入 -->
+                <el-input-number
+                  v-else-if="field.type === 'number'"
+                  v-model="selectedNode.properties[field.prop]"
+                  class="w-full"
+                />
+                
+                <!-- 普通文本 (默认) -->
+                <el-input
+                  v-else
+                  v-model="selectedNode.properties[field.prop]"
+                  :placeholder="field.placeholder || `请输入${field.label}...`"
+                />
+              </el-form-item>
+            </div>
 
             <div class="flex gap-3 justify-end mt-4">
               <el-button type="danger" plain @click="deleteEntity">删除实体</el-button>
@@ -232,11 +263,12 @@
           <el-select v-model="newNodeData.label" class="w-full">
             <el-option label="心理问题" value="心理问题" />
             <el-option label="症状" value="症状" />
-            <el-option label="干预方案" value="干预方案" />
+            <el-option label="治疗方案" value="治疗方案" />
             <el-option label="应对技巧" value="应对技巧" />
+            <el-option label="校园政策" value="校园政策" />
+            <el-option label="校园机构" value="校园机构" />
             <el-option label="风险等级" value="风险等级" />
             <el-option label="应急预案" value="应急预案" />
-            <el-option label="校园部门" value="校园部门" />
           </el-select>
         </el-form-item>
         <el-form-item label="实体名称 (Name)" required>
@@ -285,11 +317,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, defineComponent, h } from 'vue'
-import { Refresh, FullScreen, Delete } from '@element-plus/icons-vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { Refresh, FullScreen } from '@element-plus/icons-vue'
 import G6 from '@antv/g6'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import apiClient from '../utils/api'
+import { getSchemaByLabel } from '../config/graphNodeSchema'
 
 // removed RelationshipTable functional component
 
@@ -320,6 +353,9 @@ const searchResults = ref<any[]>([])
 const selectedTargetUuid = ref('')
 const newRelWeight = ref(0.8)
 const bindActionLoading = ref(false)
+
+// --- 动态 Schema 计算 ---
+const currentSchema = computed(() => getSchemaByLabel(selectedNode.value?.label || ''))
 
 // ======= 初始化与数据加载 =======
 const initGraph = () => {
@@ -427,7 +463,7 @@ const saveEntityChanges = async () => {
   try {
     const payload = {
       name: selectedNode.value.name,
-      description: selectedNode.value.properties.描述 || selectedNode.value.properties.原理 || selectedNode.value.properties.诊断标准 || selectedNode.value.description
+      properties: selectedNode.value.properties
     }
     await apiClient.put(`/graph/entity/${selectedNode.value.id}/`, payload)
     ElMessage.success('基础属性保存成功')
@@ -610,8 +646,19 @@ onBeforeUnmount(() => graph?.destroy())
 .property-card {
   border: none;
   background: #fdfdfd;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
 }
+.schema-item {
+  margin-bottom: 20px;
+}
+.w-full { width: 100%; }
+.mt-4 { margin-top: 16px; }
 :deep(.el-drawer__body) {
   padding-top: 10px;
+  background-color: #f8fafc;
+}
+:deep(.el-form-item__label) {
+  font-weight: 500;
+  color: #475569;
 }
 </style>

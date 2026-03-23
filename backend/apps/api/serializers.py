@@ -14,12 +14,14 @@ class AssessmentRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssessmentRecord
         fields = '__all__'
+        read_only_fields = ['user']
 
 
 class UserMoodLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserMoodLog
         fields = '__all__'
+        read_only_fields = ['user']
 
 
 class UserDetailedSerializer(serializers.ModelSerializer):
@@ -81,6 +83,7 @@ class UserFavoriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserFavorite
         fields = '__all__'
+        read_only_fields = ['user']
 
 
 class AuditLogSerializer(serializers.ModelSerializer):

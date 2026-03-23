@@ -6,19 +6,24 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+scripts/
 
 # Node
 node_modules/
 dist/
 npm-debug.log*
 
+# wx-app
+.hbuilderx/
+unpackage/
+
 # IDE
 .idea/
 .vscode/
 
 # Project specific
-static/
-media/
+backend/static/
+backend/media/
 
 # env
 *.env

@@ -62,7 +62,7 @@ class Neo4jRepository:
                 }][..3]
             }][..5],
 
-            campus_context: head([ (p)-[:`关联政策`]->(pol:`校园政策`)-[:`负责部门`]->(org:`校园机构`) | {
+            campus_context: head([ (p)-[:`关联政策`]->(pol:`校园政策`)-[:`属于`]->(org:`校园机构`) | {
                 policy_uuid: pol.uuid,
                 policy_name: pol.`名称`,
                 policy_detail: pol.`事项`,
@@ -132,6 +132,36 @@ class Neo4jRepository:
                 return record["name"] if record else None
         except Exception as e:
             logger.error(f"Neo4j symptom lookup error: {str(e)}")
+            return None
+
+    def find_policy_by_keyword(self, keyword: str) -> dict | None:
+        """
+        专门查询校园政策节点，支持模糊匹配名称或事项。
+        """
+        query = '''
+        MATCH (pol:`校园政策`)
+        WHERE pol.`名称` CONTAINS $keyword OR pol.`事项` CONTAINS $keyword
+        MATCH (pol)-[:`属于`]->(org:`校园机构`)
+        RETURN {
+            policy_uuid: pol.uuid,
+            policy_name: pol.`名称`,
+            policy_detail: pol.`事项`,
+            org_name: org.`名称`,
+            location: org.`办公地点`,
+            contact: org.`联系方式`
+        } AS policy_node
+        LIMIT 1
+        '''
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, keyword=keyword)
+                record = result.single()
+                if record:
+                    # 为了兼容 generate_response 的 Prompt 结构，将其包装在 campus_context 中
+                    return {"campus_context": record["policy_node"]}
+                return None
+        except Exception as e:
+            logger.error(f"Neo4j policy lookup error: {str(e)}")
             return None
 
 neo4j_repo = Neo4jRepository()

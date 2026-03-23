@@ -1,5 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework import status, permissions
 from apps.repositories.neo4j_repo import neo4j_repo
 from apps.services.audit_service import audit_service
 from apps.models import User
@@ -64,6 +65,7 @@ class EntityCreateView(APIView):
     """
     新建 Neo4j 实体节点
     """
+    permission_classes = [permissions.IsAuthenticated]
     def post(self, request):
         try:
             name = request.data.get('name')
@@ -85,7 +87,7 @@ class EntityCreateView(APIView):
                 node_id = result['node_id']
                 
             # 记录审计日志
-            handler = get_handler(request)
+            handler = self.request.user if self.request.user.is_authenticated else None
             audit_service.log_action(
                 handler, 'KG_EDITOR', 'CREATE',
                 f"创建了新节点[{label}]: 名称={name}",
@@ -93,11 +95,7 @@ class EntityCreateView(APIView):
             )
             return Response({'message': '实体创建成功', 'node_id': node_id})
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
-
-def get_handler(request):
-    auth_token = request.META.get('HTTP_AUTHORIZATION')
-    return User.objects.filter(id=auth_token).first() if auth_token else None
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
@@ -105,6 +103,7 @@ class EntityDetailView(APIView):
     """
     获取、更新或删除指定的 Neo4j 实体节点及其关系
     """
+    permission_classes = [permissions.IsAuthenticated]
     def get(self, request, node_id):
         """
         拉取节点详情及其所有外联关系数据
@@ -154,48 +153,60 @@ class EntityDetailView(APIView):
         try:
             data = request.data
             name = data.get('name')
-            description = data.get('description', '')
+            description = data.get('description')
+            properties = data.get('properties', {})
 
-            if not name:
-                return Response({'error': '实体名称不能为空'}, status=400)
+            if not name and not properties:
+                return Response({'error': '未提供任何更新内容'}, status=400)
 
-            # 1. 先查出节点现有的属性键，避免盲目 SET 导致多个描述字段并存
-            check_query = "MATCH (n) WHERE id(n) = $node_id RETURN keys(n) as keys"
-            target_keys = {'原理', '步骤', '诊断标准', '描述'}
-            found_keys = []
+            # 1. 基础属性映射 (兼容旧前端或顶层参数)
+            update_props = {}
+            if name:
+                update_props['名称'] = name
             
-            with neo4j_repo.driver.session() as session:
-                res = session.run(check_query, node_id=int(node_id)).single()
-                if res:
-                    found_keys = [k for k in res['keys'] if k in target_keys]
+            # 处理动态属性字典
+            if properties:
+                update_props.update(properties)
             
-            # 2. 构造动态 SET 子句
-            # 如果没找到任何已知描述字段，则默认更新/创建 '描述' 字段
-            if not found_keys:
-                found_keys = ['描述']
-            
-            set_clauses = [f"n.`{k}` = $desc" for k in found_keys]
+            # 处理顶层 description 兼容性 (回退到 Neo4j 已有的描述类字段)
+            if description is not None:
+                check_query = "MATCH (n) WHERE id(n) = $node_id RETURN keys(n) as keys"
+                target_keys = {'原理', '步骤', '诊断标准', '描述'}
+                found_keys = []
+                
+                with neo4j_repo.driver.session() as session:
+                    res = session.run(check_query, node_id=int(node_id)).single()
+                    if res:
+                        found_keys = [k for k in res['keys'] if k in target_keys]
+                
+                if not found_keys:
+                    found_keys = ['描述']
+                
+                for k in found_keys:
+                    update_props[k] = description
+
+            # 2. 执行动态增量更新
             query = f'''
             MATCH (n) WHERE id(n) = $node_id
-            SET n.名称 = $name, {", ".join(set_clauses)}
+            SET n += $props
             RETURN n
             '''
             
             with neo4j_repo.driver.session() as session:
-                result = session.run(query, node_id=int(node_id), name=name, desc=description).single()
+                result = session.run(query, node_id=int(node_id), props=update_props).single()
                 if not result:
-                    return Response({'error': '节点不存在'}, status=404)
+                    return Response({'error': '节点不存在'}, status=status.HTTP_404_NOT_FOUND)
                 
             # 记录审计日志
-            handler = get_handler(request)
+            handler = self.request.user if self.request.user.is_authenticated else None
             audit_service.log_action(
                 handler, 'KG_EDITOR', 'UPDATE',
-                f"更新了节点 ID={node_id}: 名称={name}",
+                f"更新了节点 ID={node_id}: {update_props}",
                 request.META.get('REMOTE_ADDR')
             )
             return Response({'message': '实体更新成功'})
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def delete(self, request, node_id):
         try:
@@ -222,7 +233,7 @@ class EntityDetailView(APIView):
                 session.run(query, node_id=int(node_id))
             
             # 记录审计日志
-            handler = get_handler(request)
+            handler = self.request.user if self.request.user.is_authenticated else None
             audit_service.log_action(
                 handler, 'KG_EDITOR', 'DELETE',
                 f"删除了节点 ID={node_id}, 名称={node_name}",
@@ -231,13 +242,14 @@ class EntityDetailView(APIView):
                 
             return Response({'message': '实体删除成功'})
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class EdgeManagementView(APIView):
     """
     图谱关系（连线）管理：建立、更新属性、解绑
     """
+    permission_classes = [permissions.IsAuthenticated]
     def post(self, request):
         """
         建立或更新关系
@@ -258,11 +270,17 @@ class EdgeManagementView(APIView):
         RETURN r
         '''
         try:
+            # 安全转换 source_id
+            try:
+                sid = int(source_id)
+            except (ValueError, TypeError):
+                return Response({'error': '无效的源节点 ID'}, status=status.HTTP_400_BAD_REQUEST)
+
             with neo4j_repo.driver.session() as session:
-                session.run(query, source_id=int(source_id), target_uuid=target_uuid, properties=properties)
+                session.run(query, source_id=sid, target_uuid=target_uuid, properties=properties)
             
             # 记录审计日志
-            handler = get_handler(request)
+            handler = self.request.user if self.request.user.is_authenticated else None
             audit_service.log_action(
                 handler, 'KG_EDITOR', 'LINK',
                 f"建立了关系: Node({source_id}) -[{rel_type}]-> Node({target_uuid})",
@@ -270,7 +288,7 @@ class EdgeManagementView(APIView):
             )
             return Response({'message': '关系更新成功'})
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def delete(self, request):
         """
@@ -289,11 +307,17 @@ class EdgeManagementView(APIView):
         DELETE r
         '''
         try:
+            # 安全转换 source_id
+            try:
+                sid = int(source_id)
+            except (ValueError, TypeError):
+                return Response({'error': '无效的源节点 ID'}, status=status.HTTP_400_BAD_REQUEST)
+
             with neo4j_repo.driver.session() as session:
-                session.run(query, source_id=int(source_id), target_uuid=target_uuid)
+                session.run(query, source_id=sid, target_uuid=target_uuid)
             
             # 记录审计日志
-            handler = get_handler(request)
+            handler = self.request.user if self.request.user.is_authenticated else None
             audit_service.log_action(
                 handler, 'KG_EDITOR', 'UNLINK',
                 f"解除了关系: Node({source_id}) -[{rel_type}]-> Node({target_uuid})",
@@ -301,7 +325,7 @@ class EdgeManagementView(APIView):
             )
             return Response({'message': '关系解除成功'})
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class EntitySearchView(APIView):
     """
@@ -328,8 +352,4 @@ class EntitySearchView(APIView):
                 } for record in result]
                 return Response(nodes)
         except Exception as e:
-            return Response({'error': str(e)}, status=500)
-
-    def _get_handler(self, request):
-        auth_token = request.META.get('HTTP_AUTHORIZATION')
-        return User.objects.filter(id=auth_token).first() if auth_token else None
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

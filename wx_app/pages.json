@@ -1,17 +1,113 @@
 {
-	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
+	"pages": [
 		{
-			"path": "pages/index/index",
+			"path": "pages/home/index",
 			"style": {
-				"navigationBarTitleText": "uni-app"
+				"navigationBarTitleText": "心邻空间",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/chat/index",
+			"style": {
+				"navigationBarTitleText": "AI 心理咨询",
+				"backgroundColor": "#F7FAF9"
+			}
+		},
+		{
+			"path": "pages/mood/index",
+			"style": {
+				"navigationBarTitleText": "心情手记"
+			}
+		},
+		{
+			"path": "pages/discovery/assessment",
+			"style": {
+				"navigationBarTitleText": "心理测评"
+			}
+		},
+		{
+			"path": "pages/discovery/article-detail",
+			"style": {
+				"navigationBarTitleText": "文章详情"
+			}
+		},
+		{
+			"path": "pages/profile/records",
+			"style": {
+				"navigationBarTitleText": "测评记录"
+			}
+		},
+		{
+			"path": "pages/profile/favorites",
+			"style": {
+				"navigationBarTitleText": "我的收藏"
+			}
+		},
+		{
+			"path": "pages/discovery/index",
+			"style": {
+				"navigationBarTitleText": "探索发现"
+			}
+		},
+		{
+			"path": "pages/profile/index",
+			"style": {
+				"navigationBarTitleText": "个人中心"
+			}
+		},
+		{
+			"path": "pages/login/index",
+			"style": {
+				"navigationBarTitleText": "身份验证",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/register/index",
+			"style": {
+				"navigationBarTitleText": "完善档案",
+				"navigationStyle": "custom"
 			}
 		}
 	],
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
-		"navigationBarTitleText": "uni-app",
-		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F8F8F8"
+		"navigationBarTitleText": "SH MindStation",
+		"navigationBarBackgroundColor": "#F7FAF9",
+		"backgroundColor": "#F7FAF9"
+	},
+	"tabBar": {
+		"color": "#7D8E86",
+		"selectedColor": "#8ABBA1",
+		"borderStyle": "white",
+		"backgroundColor": "#ffffff",
+		"list": [
+			{
+				"pagePath": "pages/home/index",
+				"text": "首页",
+				"iconPath": "static/tab/home.png",
+				"selectedIconPath": "static/tab/home-active.png"
+			},
+			{
+				"pagePath": "pages/chat/index",
+				"text": "咨询",
+				"iconPath": "static/tab/chat.png",
+				"selectedIconPath": "static/tab/chat-active.png"
+			},
+			{
+				"pagePath": "pages/discovery/index",
+				"text": "发现",
+				"iconPath": "static/tab/discovery.png",
+				"selectedIconPath": "static/tab/discovery-active.png"
+			},
+			{
+				"pagePath": "pages/profile/index",
+				"text": "我的",
+				"iconPath": "static/tab/profile.png",
+				"selectedIconPath": "static/tab/profile-active.png"
+			}
+		]
 	},
 	"uniIdRouter": {}
 }

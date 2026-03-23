@@ -1,7 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    MockLoginView,
+    WXLoginView,
+    CompleteProfileView,
     AdminLoginView,
     UserViewSet,
     ChatSessionViewSet,
@@ -11,7 +12,8 @@ from .views import (
     CrisisAlertLogViewSet,
     AuditLogViewSet,
     ArticleViewSet,
-    AssessmentScaleViewSet
+    AssessmentScaleViewSet,
+    AssessmentRecordViewSet
 )
 from .graph_views import GraphDumpView, EntityDetailView, EdgeManagementView, EntitySearchView, EntityCreateView
 from .stats_views import DashboardStatsView
@@ -25,10 +27,12 @@ router.register(r'alerts', CrisisAlertLogViewSet, basename='alert')
 router.register(r'audit', AuditLogViewSet, basename='audit')
 router.register(r'articles', ArticleViewSet, basename='article')
 router.register(r'scales', AssessmentScaleViewSet, basename='scale')
+router.register(r'assessments', AssessmentRecordViewSet, basename='assessment')
 
 
 urlpatterns = [
-    path('auth/login/', MockLoginView.as_view(), name='auth-login'),
+    path('auth/login/', WXLoginView.as_view(), name='auth-login'),
+    path('auth/complete-profile/', CompleteProfileView.as_view(), name='auth-complete-profile'),
     path('admin/login/', AdminLoginView.as_view(), name='admin-login'),
     path('chat/interact/', ChatInteractView.as_view(), name='chat-interact'),
     path('graph/dump/', GraphDumpView.as_view(), name='graph-dump'),

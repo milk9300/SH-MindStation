@@ -33,7 +33,8 @@ class ChatService:
         intent = llm_service.analyze_intent(content)
         
         # 3. 尝试进行图谱检索，获取 RAG Context
-        graph_context = graph_service.fetch_context_for_intent(intent)
+        # ★ 注意这里：将 content 作为第二个参数传入，供查询政策等兜底使用
+        graph_context = graph_service.fetch_context_for_intent(intent, content)
         
         # 4. 图谱安全拦截（检查返回的树中是否有高危预警）
         is_high_risk = False
@@ -56,7 +57,19 @@ class ChatService:
                     )
                     break
                     
-        # 5. 生成回复策略
+        # 5. 回复与审计策略
+        # 如果图谱没有识别到具体节点，但 LLM 识别出了意图，也要记录预案
+        if not is_high_risk and intent.intent_type == "CRISIS_ALERT":
+             is_high_risk = True
+             # 写高危审计日志（语义识别触发）
+             CrisisAlertLog.objects.create(
+                 user=user,
+                 message=user_message,
+                 risk_level="极高",
+                 trigger_symptom=f"LLM 语义识别: {intent.symptoms[0] if intent.symptoms else '未提取具体症状'}"
+             )
+
+        # 6. 生成回复策略
         if is_high_risk or intent.intent_type == "CRISIS_ALERT":
             # 【熔断机制】如果检测到危机，严禁调用 LLM 生成，直接返回静态应急预案
             final_reply = emergency_action if emergency_action else "同学，系统检测到您当前可能处于极度痛苦中。生命非常宝贵，请立即拨打校园 24 小时心理危机干预热线: 400-xxx-xxxx。会有专业的老师全天候陪伴您度过难关。"

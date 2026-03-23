@@ -130,6 +130,7 @@ const fetchAlerts = async () => {
   loading.value = true
   try {
     const response = await apiClient.get('/alerts/')
+    // console.log(response);
     tableData.value = response as any
   } catch (error) {
     ElMessage.error('无法拉取预警记录')

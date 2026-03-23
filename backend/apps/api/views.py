@@ -1,9 +1,13 @@
-from rest_framework import viewsets, status
+import requests
+from django.conf import settings
+from rest_framework import viewsets, status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import authenticate
+from rest_framework.authtoken.models import Token
+from django.utils import timezone
 from apps.models import (
     User, ChatSession, ChatMessage, CrisisAlertLog, UserMoodLog, 
     UserFavorite, AssessmentRecord, AuditLog, Article, AssessmentScale, AssessmentQuestion
@@ -12,7 +16,7 @@ from apps.api.serializers import (
     UserSerializer, UserDetailedSerializer, ChatSessionSerializer, ChatSessionListSerializer,
     ChatMessageSerializer, CrisisAlertLogSerializer, UserMoodLogSerializer, UserFavoriteSerializer, 
     AuditLogSerializer, ArticleSerializer, AssessmentScaleSerializer, AssessmentScaleListSerializer,
-    AssessmentQuestionSerializer
+    AssessmentQuestionSerializer, AssessmentRecordSerializer
 )
 from apps.services.chat_service import chat_service
 from apps.services.audit_service import audit_service
@@ -27,24 +31,128 @@ def get_client_ip(request):
     return ip
 
 
-class MockLoginView(APIView):
+class ProfileRequiredPermission(permissions.BasePermission):
     """
-    模拟微信小程序登录（无密码，直接以 campus_id 或 openid 获取/创建用户）
-    仅供开发阶段测试使用。
+    安全网权限类：拦截未完善档案（campus_id 为空）的用户访问业务接口。
+    结合 DRF 的 TokenAuthentication 使用。
+    """
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        # 管理员/辅导员不受限制
+        if user.role in ('admin', 'counselor'):
+            return True
+        # 学生必须有 campus_id 才算档案完善
+        return bool(user.campus_id)
+
+    def has_object_permission(self, request, view, obj):
+        return self.has_permission(request, view)
+
+
+class WXLoginView(APIView):
+    """
+    微信静默登录
+    仅接收 code，后台自动建档，返回 token + is_profile_completed
+    """
+    authentication_classes = []  # 登录接口不需要认证
+    permission_classes = []
+
+    def post(self, request):
+        code = request.data.get('code')
+
+        if not code:
+            return Response(
+                {"error": "缺少微信登录凭证 code"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1. 向微信服务器换取 openid
+        appid = settings.WX_APPID
+        secret = settings.WX_SECRET
+        url = (
+            f"https://api.weixin.qq.com/sns/jscode2session"
+            f"?appid={appid}&secret={secret}&js_code={code}"
+            f"&grant_type=authorization_code"
+        )
+
+        try:
+            wx_res = requests.get(url, timeout=5).json()
+            openid = wx_res.get('openid')
+            if not openid:
+                return Response(
+                    {"error": "微信授权失败", "detail": wx_res.get('errmsg', 'Unknown error')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Exception as e:
+            return Response(
+                {"error": f"微信服务器请求异常: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # 2. 查或创建占位用户（静默建档）
+        user, created = User.objects.get_or_create(
+            openid=openid,
+            defaults={
+                'username': f'wx_{openid[:10]}',
+                'role': User.RoleChoices.STUDENT
+            }
+        )
+
+        # 3. 关键判定：用户是否已经补充了必填信息
+        is_profile_completed = bool(user.campus_id)
+
+        # 4. 生成/获取 Token
+        token, _ = Token.objects.get_or_create(user=user)
+
+        return Response({
+            "token": f"Token {token.key}",
+            "is_profile_completed": is_profile_completed,
+            "user": UserSerializer(user).data
+        })
+
+
+class CompleteProfileView(APIView):
+    """
+    渐进式注册：补充用户档案
+    必填: campus_id, real_name
+    选填: nickname, avatar_url, phone
     """
     def post(self, request):
-        campus_id = request.data.get('campus_id')
-        nickname = request.data.get('nickname', '匿名同学')
-        
-        if not campus_id:
-            return Response({"error": "campus_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-            
-        user, created = User.objects.get_or_create(
-            campus_id=campus_id,
-            defaults={'username': f'stu_{campus_id}', 'nickname': nickname}
-        )
+        user = request.user
+        if not user or not user.is_authenticated:
+            return Response({"error": "未登录"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        campus_id = request.data.get('campus_id', '').strip()
+        real_name = request.data.get('real_name', '').strip()
+
+        # Fail-Fast: 必填字段校验
+        if not campus_id or not real_name:
+            return Response(
+                {"error": "学号和真实姓名为必填项"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 更新必填字段
+        user.campus_id = campus_id
+        user.real_name = real_name
+
+        # 更新选填字段（有值才覆盖）
+        nickname = request.data.get('nickname', '').strip()
+        avatar_url = request.data.get('avatar_url', '').strip()
+        phone = request.data.get('phone', '').strip()
+
+        if nickname:
+            user.nickname = nickname
+        if avatar_url:
+            user.avatar_url = avatar_url
+        if phone:
+            user.phone = phone
+
+        user.save()
+
         return Response({
-            "token": str(user.id),  # 暂时用 user UUID 模拟 token
+            "message": "档案补充完成",
             "user": UserSerializer(user).data
         })
 
@@ -64,9 +172,10 @@ class AdminLoginView(APIView):
         user = authenticate(username=username, password=password)
         
         if user is not None and user.role == 'admin':
-            # 登录成功，返回 token (为了简配，我们复用 user.id 充当 token)
+            # 登录成功，返回真实的 DRF Token
+            token, _ = Token.objects.get_or_create(user=user)
             return Response({
-                "token": str(user.id),
+                "token": token.key,
                 "user": UserSerializer(user).data
             })
             
@@ -100,9 +209,7 @@ class UserViewSet(viewsets.ModelViewSet):
         instance.delete()
 
     def _get_handler(self):
-        auth_token = self.request.META.get('HTTP_AUTHORIZATION')
-        return User.objects.filter(id=auth_token).first() if auth_token else None
-
+        return self.request.user if self.request.user.is_authenticated else None
 
 
 class ChatSessionViewSet(viewsets.ModelViewSet):
@@ -110,6 +217,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
     管理聊天会话
     """
     queryset = ChatSession.objects.all().select_related('user')
+    permission_classes = [ProfileRequiredPermission] # 仅限完善信息后的用户进入
     
     def get_serializer_class(self):
         if self.action == 'list':
@@ -117,22 +225,21 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         return ChatSessionSerializer
 
     def get_queryset(self):
-        auth_token = self.request.META.get('HTTP_AUTHORIZATION')
-        if not auth_token:
-            return self.queryset.none()
-            
-        user = User.objects.filter(id=auth_token).first()
-        if user and user.role == 'admin':
-            return self.queryset
-            
-        return ChatSession.objects.filter(user_id=auth_token)
+        user = self.request.user
+        if user.is_authenticated:
+            if user.role == 'admin':
+                return self.queryset
+            return self.queryset.filter(user=user)
+        return self.queryset.none()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        auth_token = request.META.get('HTTP_AUTHORIZATION')
+        handler = request.user
         
-        handler = User.objects.filter(id=auth_token).first()
-        if handler and handler.role == 'admin':
+        if handler.is_authenticated and handler.role == 'admin':
             audit_service.log_action(
                 handler, 'SESSIONS', 'VIEW',
                 f"查看了会话聊天记录: ID={instance.id}, 用户={instance.user.real_name if instance.user else '未知'}",
@@ -141,27 +248,20 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             
         return super().retrieve(request, *args, **kwargs)
 
-    def perform_create(self, serializer):
-        user_id = self.request.META.get('HTTP_AUTHORIZATION')
-        if not user_id:
-             user_id = self.request.data.get('user_id') # 降级方案
-        user = get_object_or_404(User, id=user_id)
-        serializer.save(user=user)
-
 
 class ChatInteractView(APIView):
     """
     核心对话交互 API (对接 ChatService 流水线)
     """
+    permission_classes = [ProfileRequiredPermission]
+
     def post(self, request):
-        user_id = request.META.get('HTTP_AUTHORIZATION') or request.data.get('user_id')
+        user = request.user
         session_id = request.data.get('session_id')
         content = request.data.get('content')
 
-        if not all([user_id, session_id, content]):
-            return Response({"error": "user_id, session_id, and content are required"}, status=status.HTTP_400_BAD_REQUEST)
-
-        user = get_object_or_404(User, id=user_id)
+        if not all([session_id, content]):
+            return Response({"error": "session_id and content are required"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             # 触发核心 RAG 流水线
@@ -174,23 +274,71 @@ class ChatInteractView(APIView):
 class UserMoodLogViewSet(viewsets.ModelViewSet):
     queryset = UserMoodLog.objects.all()
     serializer_class = UserMoodLogSerializer
+    permission_classes = [ProfileRequiredPermission]
 
     def get_queryset(self):
-        user_id = self.request.META.get('HTTP_AUTHORIZATION')
-        if user_id:
-            return UserMoodLog.objects.filter(user_id=user_id)
-        return self.queryset
+        user = self.request.user
+        if user.is_authenticated:
+            return UserMoodLog.objects.filter(user=user).order_by('-created_at')
+        return UserMoodLog.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        """
+        情绪打卡 Upsert 逻辑：
+        如果用户今日已打卡，则更新记录；否则创建新记录。
+        """
+        user = request.user
+        today = timezone.now().date()
+        
+        existing_log = UserMoodLog.objects.filter(user=user, created_at=today).first()
+        if existing_log:
+            # 更新已有记录
+            serializer = self.get_serializer(existing_log, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        # 创建新记录
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class AssessmentRecordViewSet(viewsets.ModelViewSet):
+    """
+    学生测评记录管理
+    """
+    queryset = AssessmentRecord.objects.all()
+    serializer_class = AssessmentRecordSerializer
+    permission_classes = [ProfileRequiredPermission]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_authenticated:
+            # 学生只能看自己的，管理员可以看全部
+            if user.role == 'admin':
+                return self.queryset
+            return self.queryset.filter(user=user).order_by('-created_at')
+        return self.queryset.none()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 
 class UserFavoriteViewSet(viewsets.ModelViewSet):
     queryset = UserFavorite.objects.all()
     serializer_class = UserFavoriteSerializer
+    permission_classes = [ProfileRequiredPermission]
 
     def get_queryset(self):
-        user_id = self.request.META.get('HTTP_AUTHORIZATION')
-        if user_id:
-            return UserFavorite.objects.filter(user_id=user_id)
-        return self.queryset
+        user = self.request.user
+        if user.is_authenticated:
+            return UserFavorite.objects.filter(user=user)
+        return UserFavorite.objects.none()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 
 class CrisisAlertLogViewSet(viewsets.ModelViewSet):
@@ -208,9 +356,8 @@ class CrisisAlertLogViewSet(viewsets.ModelViewSet):
         return self.queryset
         
     def perform_update(self, serializer):
-        # 1. 提取身份标识
-        auth_token = self.request.META.get('HTTP_AUTHORIZATION')
-        user = User.objects.filter(id=auth_token).first() if auth_token else None
+        # 1. 提取已认证用户
+        user = self.request.user if self.request.user.is_authenticated else None
         
         # 2. 接单逻辑：如果状态从 pending 变为 handling/resolved，且目前没有处理人，则自动绑定当前管理员
         if user and user.role == 'admin':
@@ -238,10 +385,8 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         # 仅限管理员查看审计日志
-        auth_token = self.request.META.get('HTTP_AUTHORIZATION')
-        user = User.objects.filter(id=auth_token).first() if auth_token else None
-        
-        if user and user.role == 'admin':
+        user = self.request.user
+        if user.is_authenticated and user.role == 'admin':
             return AuditLog.objects.select_related('admin').all().order_by('-created_at')
         return AuditLog.objects.none()
 
@@ -311,14 +456,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
         instance.delete()
 
     def _get_handler(self):
-        auth_token = self.request.META.get('HTTP_AUTHORIZATION')
-        if auth_token == 'admin_mock_token_123':
-            handler, _ = User.objects.get_or_create(
-                username='admin', 
-                defaults={'role': 'admin', 'real_name': '超级管理员'}
-            )
-            return handler
-        return User.objects.filter(id=auth_token).first() if auth_token else None
+        return self.request.user if self.request.user.is_authenticated else None
 
 
 class AssessmentScaleViewSet(viewsets.ModelViewSet):
@@ -412,6 +550,4 @@ class AssessmentScaleViewSet(viewsets.ModelViewSet):
         return Response({"status": "questions synced"})
 
     def _get_handler(self):
-        auth_token = self.request.META.get('HTTP_AUTHORIZATION')
-        return User.objects.filter(id=auth_token).first() if auth_token else None
-
+        return self.request.user if self.request.user.is_authenticated else None
