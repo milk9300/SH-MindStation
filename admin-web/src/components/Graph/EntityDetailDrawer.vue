@@ -97,7 +97,7 @@
       </el-card>
 
       <!-- 下半部分：关系管理 Tabs -->
-      <el-tabs :model-value="activeTab" @update:model-value="$emit('update:activeTab', $event)" class="relationship-tabs">
+      <el-tabs v-if="relationships" :model-value="activeTab" @update:model-value="$emit('update:activeTab', $event)" class="relationship-tabs">
         <el-tab-pane label="具有症状" name="具有症状">
           <div class="tab-header">
             <span class="tab-desc">此问题关联的典型临床表现</span>
@@ -176,12 +176,14 @@ const emit = defineEmits<{
 }>()
 
 const getRelationshipsByType = (type: string) => {
-  return props.relationships.filter((r: any) => r.type === type)
+  if (!props.relationships) return []
+  return props.relationships.filter((r: any) => r && r.type === type)
 }
 
 const getOtherRelationships = () => {
+  if (!props.relationships) return []
   const knownTypes = ['具有症状', '治疗方案', '推荐文章', '推荐测评']
-  return props.relationships.filter((r: any) => !knownTypes.includes(r.type))
+  return props.relationships.filter((r: any) => r && !knownTypes.includes(r.type))
 }
 
 const getNodeTypeTag = (label: string) => {

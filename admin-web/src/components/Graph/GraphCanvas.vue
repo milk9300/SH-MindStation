@@ -19,7 +19,7 @@
         </el-button-group>
       </div>
     </template>
-    <div id="graph-container" ref="graphRef" class="graph-canvas"></div>
+    <div ref="graphRef" class="graph-canvas"></div>
   </el-card>
 </template>
 
@@ -85,9 +85,19 @@ const initGraph = () => {
 }
 
 const renderGraph = () => {
-  if (!graph) return
-  graph.data(props.data)
-  graph.render()
+  if (!graph || !props.data) return
+  
+  // 使用深拷贝防止 G6 修改原始响应式数据
+  const clonedData = JSON.parse(JSON.stringify(props.data))
+  
+  // 优化：如果已经有数据且不是首次渲染，尝试使用 changeData 平滑更新
+  // 但对于力导向布局，有时直接 render 反而更稳
+  if (graph.getNodes().length > 0) {
+    graph.changeData(clonedData)
+  } else {
+    graph.data(clonedData)
+    graph.render()
+  }
 }
 
 const fitGraph = () => graph?.fitView()
@@ -97,13 +107,23 @@ watch(() => props.data, () => {
 }, { deep: true })
 
 onMounted(() => {
+  // 确保 DOM 已经完全计算尺寸
+  const observer = new ResizeObserver(() => {
+    if (graph && graphRef.value) {
+      const width = graphRef.value.offsetWidth
+      const height = graphRef.value.offsetHeight || 600
+      graph.changeSize(width, height)
+      graph.setAutoPaint(true)
+      graph.paint()
+      graph.fitView()
+    }
+  })
+
   setTimeout(() => {
     initGraph()
     renderGraph()
-  }, 100)
-  window.addEventListener('resize', () => {
-    if (graph && graphRef.value) graph.changeSize(graphRef.value.offsetWidth, graphRef.value.offsetHeight)
-  })
+    if (graphRef.value) observer.observe(graphRef.value)
+  }, 200)
 })
 
 onBeforeUnmount(() => graph?.destroy())

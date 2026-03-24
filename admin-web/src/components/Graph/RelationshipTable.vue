@@ -5,7 +5,7 @@
     <el-table-column label="权重 / 属性" width="180">
       <template #default="scope">
         <el-input-number
-          v-if="scope.row.properties['匹配权重'] !== undefined || scope.row.properties['有效性'] !== undefined"
+          v-if="scope.row.properties && (scope.row.properties['匹配权重'] !== undefined || scope.row.properties['有效性'] !== undefined)"
           :model-value="scope.row.properties['匹配权重'] || scope.row.properties['有效性']"
           :min="0.1" :max="1.0" :step="0.1" size="small"
           @change="(val: number) => $emit('update-prop', scope.row, val)"

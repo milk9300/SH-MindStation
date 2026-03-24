@@ -66,6 +66,17 @@ export function useGraphEditor() {
     drawerLoading.value = true
     try {
       const res: any = await apiClient.get(`/graph/entity/${nodeId}/`)
+      
+      // 数据标准化：确保数值型属性被正确解析为 Number，防止 UI 显示 NaN
+      if (res.properties) {
+        if (res.properties['严重程度'] !== undefined) {
+          res.properties['严重程度'] = Number(res.properties['严重程度']) || 0
+        }
+        if (res.properties['题目总数'] !== undefined) {
+          res.properties['题目总数'] = Number(res.properties['题目总数']) || 0
+        }
+      }
+
       selectedNode.value = res
       if (res.label === '心理问题' || res.label === '症状') {
         activeTab.value = '具有症状'
