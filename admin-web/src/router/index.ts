@@ -50,6 +50,21 @@ const routes: Array<RouteRecordRaw> = [
     path: '/scales',
     name: 'Scales',
     component: () => import('../views/ScalesView.vue')
+  },
+  {
+    path: '/crisis-keywords',
+    name: 'CrisisKeywords',
+    component: () => import('../views/CrisisKeywordsView.vue')
+  },
+  {
+    path: '/risk-levels',
+    name: 'RiskLevels',
+    component: () => import('../views/RiskLevelsView.vue')
+  },
+  {
+    path: '/emergency-plans',
+    name: 'EmergencyPlans',
+    component: () => import('../views/EmergencyPlansView.vue')
   }
 ]
 

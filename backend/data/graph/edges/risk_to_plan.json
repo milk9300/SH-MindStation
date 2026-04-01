@@ -1,0 +1,38 @@
+[
+    {
+        "source_label": "风险等级",
+        "source_key": "名称",
+        "source_value": "普通",
+        "target_label": "应急预案",
+        "target_key": "名称",
+        "target_value": "普通方案",
+        "relation": "执行预案"
+    },
+    {
+        "source_label": "风险等级",
+        "source_key": "名称",
+        "source_value": "中等",
+        "target_label": "应急预案",
+        "target_key": "名称",
+        "target_value": "中等方案",
+        "relation": "执行预案"
+    },
+    {
+        "source_label": "风险等级",
+        "source_key": "名称",
+        "source_value": "高危",
+        "target_label": "应急预案",
+        "target_key": "名称",
+        "target_value": "高危方案",
+        "relation": "执行预案"
+    },
+    {
+        "source_label": "风险等级",
+        "source_key": "名称",
+        "source_value": "极高",
+        "target_label": "应急预案",
+        "target_key": "名称",
+        "target_value": "极高方案",
+        "relation": "执行预案"
+    }
+]

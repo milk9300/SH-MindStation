@@ -23,90 +23,99 @@ class Neo4jRepository:
         if self.driver is not None:
             self.driver.close()
 
-    def get_psychological_problem_graph(self, problem_name: str) -> dict:
+    def get_psychological_problem_graph(self, problem_name: str = None, uuid: str = None) -> dict:
         """
-        根据名称检索心理问题（支持模糊匹配），直接组装为 JSON 树。
+        深度获取心理问题关联的所有资源（文章、对策、政策、症状）。
+        采用 Map Projection 字典投影，直接返回符合前端要求的嵌套 JSON。
         """
-        # 使用模糊匹配 (CONTAINS) 增加鲁棒性，即便 LLM 提取的词不完全等于节点名
-        query = '''
-        MATCH (p:`心理问题`)
-        WHERE p.`名称` CONTAINS $problem_name OR $problem_name CONTAINS p.`名称`
+        if uuid:
+            match_clause = "MATCH (p:`心理问题` {uuid: $uuid})"
+            params = {"uuid": uuid}
+        elif problem_name:
+            match_clause = "MATCH (p:`心理问题`) WHERE p.`名称` CONTAINS $problem_name"
+            params = {"problem_name": problem_name}
+        else:
+            return None
+
+        query = match_clause + """
         WITH p LIMIT 1
         
-        MATCH (p)
+        OPTIONAL MATCH (p)-[:`具有症状`]->(s:`症状`)
+        WITH p, collect(DISTINCT s.`名称`)[..3] AS symptoms
+        
+        OPTIONAL MATCH (p)-[:`关联政策`]->(pol:`校园政策`)
+        WITH p, symptoms, collect(DISTINCT pol { 
+            .uuid, 
+            name: pol.`名称`, 
+            content: pol.`内容`, 
+            department: pol.`部门` 
+        })[..1] AS policies
+        
+        OPTIONAL MATCH (p)-[:`推荐文章`]->(art:`心理文章`)
+        WITH p, symptoms, policies, collect(DISTINCT art { 
+            .uuid, 
+            name: art.`名称`, 
+            cover: art.`封面图`, 
+            url: art.url,
+            summary: art.`内容摘要`
+        })[..1] AS articles
+        
+        OPTIONAL MATCH (p)-[:`推荐方案`]->(c:`应对技巧`)
+        WITH p, symptoms, policies, articles, collect(DISTINCT c { 
+            .uuid, 
+            name: c.`名称`, 
+            content: c.`说明`,
+            method: c.`方法`
+        })[..1] AS treatments
+        
         RETURN p {
             .uuid,
-            name: p.`名称`,
-            description: p.`描述`,
-            severity: p.`严重程度`,
-
-            symptoms: [ (p)-[r1:`具有症状`]->(s:`症状`) | s {
-                .uuid,
-                name: s.`名称`,
-                weight: r1.`匹配权重`,
-                
-                risk_info: head([ (s)-[:`触发预警`]->(risk:`风险等级`)-[:`执行预案`]->(e:`应急预案`) | {
-                    level: risk.`名称`,
-                    action: e.`干预话术`,
-                    contact: e.`资源`
-                }])
-            }][..10],
-
-            treatments: [ (p)-[r2:`治疗方案`]->(t:`治疗方案`) | t {
-                .uuid,
-                name: t.`名称`,
-                rationale: t.`原理`,
-                effectiveness: r2.`有效性`,
-                
-                skills: [ (t)-[:`包含技巧`]->(c:`应对技巧`) | c {
-                    .uuid,
-                    name: c.`名称`,
-                    steps: c.`步骤`
-                }][..3]
-            }][..5],
-
-            campus_context: head([ (p)-[:`关联政策`]->(pol:`校园政策`)-[:`属于`]->(org:`校园机构`) | {
-                policy_uuid: pol.uuid,
-                policy_name: pol.`名称`,
-                policy_detail: pol.`事项`,
-                org_name: org.`名称`,
-                location: org.`办公地点`,
-                contact: org.`联系方式`
-            }]),
-
-            recommended_articles: [ (p)-[:`推荐文章`]->(art:`心理文章`) | art {
-                .uuid,
-                name: art.`名称`,
-                author: art.`作者`,
-                cover: art.`封面图`
-            }],
-
-            assessments: [ (p)-[:`具有症状`]->(s:`症状`)-[:`推荐测评`]->(scale:`测评量表`) | scale {
-                .uuid,
-                name: scale.`名称`,
-                desc: scale.`描述`,
-                total_questions: scale.`题目总数`
-            }]
-            
-        } AS structured_json
-        '''
+            .名称,
+            .risk_level,
+            .描述,
+            symptoms: symptoms,
+            campus_policies: policies,
+            articles: articles,
+            treatments: treatments
+        } AS context
+        """
         
         try:
             with self.driver.session() as session:
-                result = session.run(query, problem_name=problem_name)
+                result = session.run(query, **params)
                 record = result.single()
                 if record:
-                    return record["structured_json"]
+                    return record["context"]
                 return None
         except Exception as e:
-            logger.error(f"Neo4j query error: {str(e)}")
-            # Fail-Fast: 立即校验并在底层记录，但不直接抛给前端，而是返回 None 走兜底
+            logger.error(f"Neo4j deep query error: {str(e)}")
             return None
+
+    def vector_search_candidates(self, embedding: list, top_k: int = 5) -> list:
+        """
+        [STUB] 利用 Neo4j 5.x 的向量索引进行候选节点初筛。
+        """
+        query = """
+        CALL db.index.vector.queryNodes('problem_vector_index', $top_k, $embedding)
+        YIELD node, score
+        RETURN node {
+            .uuid,
+            .名称,
+            .描述,
+            score: score
+        } AS result
+        """
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, embedding=embedding, top_k=top_k)
+                return [record["result"] for record in result]
+        except Exception as e:
+            logger.error(f"Neo4j vector search failed: {str(e)}")
+            return []
 
     def find_problem_by_symptoms(self, symptoms: list[str]) -> str | None:
         """
         根据一组症状名称，在图谱中反查最匹配的心理问题名称。
-        采用评分机制进行模糊定位。
         """
         if not symptoms:
             return None
@@ -114,16 +123,9 @@ class Neo4jRepository:
         query = '''
         UNWIND $symptoms AS sym_name
         MATCH (s:`症状`)
-        WITH s, sym_name,
-             CASE 
-                WHEN s.`名称` = sym_name THEN 10
-                WHEN s.`名称` CONTAINS sym_name OR sym_name CONTAINS s.`名称` THEN 5
-                WHEN size(sym_name) >= 2 AND (s.`名称` CONTAINS substring(sym_name, 0, 2) OR sym_name CONTAINS substring(s.`名称`, 0, 2)) THEN 2
-                ELSE 0 
-             END AS match_score
-        WHERE match_score > 0
+        WHERE s.`名称` CONTAINS sym_name OR sym_name CONTAINS s.`名称`
         MATCH (p:`心理问题`)-[:`具有症状`]->(s)
-        RETURN p.`名称` AS name, sum(match_score) AS score
+        RETURN p.`名称` AS name, count(s) AS score
         ORDER BY score DESC
         LIMIT 1
         '''
@@ -137,21 +139,40 @@ class Neo4jRepository:
             logger.error(f"Neo4j symptom lookup error: {str(e)}")
             return None
 
+    def find_problem_by_keyword(self, keyword: str) -> str | None:
+        """
+        根据关键词对心理问题的名称或描述进行模糊搜索。
+        """
+        if not keyword: return None
+        
+        query = '''
+        MATCH (p:`心理问题`)
+        WHERE p.`名称` CONTAINS $keyword OR $keyword CONTAINS p.`名称`
+        OR p.`描述` CONTAINS $keyword
+        RETURN p.`名称` AS name
+        LIMIT 1
+        '''
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, keyword=keyword)
+                record = result.single()
+                return record["name"] if record else None
+        except Exception as e:
+            logger.error(f"Neo4j keyword lookup error: {str(e)}")
+            return None
+
     def find_policy_by_keyword(self, keyword: str) -> dict | None:
         """
-        专门查询校园政策节点，支持模糊匹配名称或事项。
+        专门查询校园政策节点，支持模糊匹配。
         """
         query = '''
         MATCH (pol:`校园政策`)
-        WHERE pol.`名称` CONTAINS $keyword OR pol.`事项` CONTAINS $keyword
-        MATCH (pol)-[:`属于`]->(org:`校园机构`)
-        RETURN {
-            policy_uuid: pol.uuid,
-            policy_name: pol.`名称`,
-            policy_detail: pol.`事项`,
-            org_name: org.`名称`,
-            location: org.`办公地点`,
-            contact: org.`联系方式`
+        WHERE pol.`名称` CONTAINS $keyword OR pol.`内容` CONTAINS $keyword
+        RETURN pol {
+            .uuid,
+            name: pol.`名称`,
+            content: pol.`内容`,
+            department: pol.`部门`
         } AS policy_node
         LIMIT 1
         '''

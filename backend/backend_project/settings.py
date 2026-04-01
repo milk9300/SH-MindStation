@@ -31,6 +31,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-default-key-for-dev")
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 
 # Application definition

@@ -1,13 +1,46 @@
 from rest_framework import serializers
 from apps.models import (
     User, ChatSession, ChatMessage, CrisisAlertLog, UserMoodLog, 
-    UserFavorite, AssessmentRecord, AuditLog, Article, AssessmentScale, AssessmentQuestion
+    UserFavorite, AssessmentRecord, AuditLog, Article, AssessmentScale, 
+    AssessmentQuestion, CrisisKeyword, RiskLevel, EmergencyPlan
 )
 
+class RiskLevelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RiskLevel
+        fields = '__all__'
+
+class EmergencyPlanSerializer(serializers.ModelSerializer):
+    risk_level_name = serializers.CharField(source='risk_level.name', read_only=True)
+    
+    class Meta:
+        model = EmergencyPlan
+        fields = '__all__'
+
+class CrisisKeywordSerializer(serializers.ModelSerializer):
+    level_name = serializers.CharField(source='level.name', read_only=True)
+    level_color = serializers.CharField(source='level.color_code', read_only=True)
+    
+    class Meta:
+        model = CrisisKeyword
+        fields = '__all__'
+
 class UserSerializer(serializers.ModelSerializer):
+    avatar_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
         fields = ['id', 'username', 'role', 'campus_id', 'real_name', 'nickname', 'avatar_url', 'phone']
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar_url:
+            return None
+        if obj.avatar_url.startswith(('http://', 'https://')):
+            return obj.avatar_url
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri('/' + obj.avatar_url.lstrip('/'))
+        return obj.avatar_url
 
 
 class AssessmentRecordSerializer(serializers.ModelSerializer):
@@ -96,9 +129,27 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 class ArticleSerializer(serializers.ModelSerializer):
     id = serializers.CharField(read_only=True)
+    cover_image = serializers.SerializerMethodField()
+
     class Meta:
         model = Article
         fields = '__all__'
+
+    def get_cover_image(self, obj):
+        if not obj.cover_image:
+            return None
+        if obj.cover_image.startswith(('http://', 'https://')):
+            return obj.cover_image
+        
+        request = self.context.get('request')
+        # 如果有 request，构建完整的绝对路径
+        if request:
+            return request.build_absolute_uri('/' + obj.cover_image.lstrip('/'))
+        
+        # 兼容性处理：如果没有请求上下文（如后台任务），则根据 settings 中的 BACKEND_URL 构建
+        from django.conf import settings
+        backend_url = getattr(settings, 'BACKEND_URL', 'http://localhost:8000').rstrip('/')
+        return f"{backend_url}/{obj.cover_image.lstrip('/')}"
 
 class AssessmentQuestionSerializer(serializers.ModelSerializer):
     class Meta:

@@ -46,6 +46,16 @@
           <el-menu-item index="/articles">科普文章管理</el-menu-item>
           <el-menu-item index="/scales">测评量表配置</el-menu-item>
         </el-sub-menu>
+
+        <el-sub-menu index="safety">
+          <template #title>
+            <el-icon><Lock /></el-icon>
+            <span>安全合规管理手段</span>
+          </template>
+          <el-menu-item index="/risk-levels">风险等级定义</el-menu-item>
+          <el-menu-item index="/emergency-plans">干预预案配置</el-menu-item>
+          <el-menu-item index="/crisis-keywords">违规词库管理</el-menu-item>
+        </el-sub-menu>
       </el-menu>
 
     </el-aside>
@@ -86,7 +96,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Connection, DataBoard, Warning, ChatDotRound, Odometer, UserFilled, Collection } from '@element-plus/icons-vue'
+import { Connection, DataBoard, Warning, ChatDotRound, Odometer, UserFilled, Collection, Lock } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -111,7 +121,10 @@ const currentRouteName = computed(() => {
     '/users': '学生心理健康档案',
     '/audit': '系统操作审计日志',
     '/articles': '科普文章内容管理',
-    '/scales': '心理测评量表配置'
+    '/scales': '心理测评量表配置',
+    '/risk-levels': '系统安全风险等级',
+    '/emergency-plans': '自动干预预案配置',
+    '/crisis-keywords': '违规词库动态管理'
   }
 
   return map[route.path] || 'MindStation Dashboard'

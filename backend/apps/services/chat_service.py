@@ -1,8 +1,10 @@
 import logging
 from django.db import transaction
+from django.conf import settings
 from apps.models import ChatSession, ChatMessage, CrisisAlertLog
 from apps.services.llm_service import llm_service
 from apps.services.graph_service import graph_service
+from apps.services.crisis_service import crisis_interceptor
 
 logger = logging.getLogger(__name__)
 
@@ -13,11 +15,14 @@ class ChatService:
     """
     
     @transaction.atomic
-    def process_message(self, user, session_id, content: str) -> dict:
+    def process_message(self, user, session_id, content: str, selected_node_uuid: str = None) -> dict:
         """
-        处理用户的单次聊天请求，串联所有子服务。
+        处理用户的单次聊天请求，支持分阶段交互。
+        1. 危机拦截
+        2. 若有 selected_node_uuid -> 深度检索并生成最终卡片 (Stage 2)
+        3. 若为普通文字 -> 向量候选 + LLM 共情并提供选项 (Stage 1)
         """
-        # 1. 记录用户的原始输入
+        # 1. 记录会话与原始输入
         session, created = ChatSession.objects.get_or_create(
             id=session_id,
             defaults={'user': user, 'title': content[:20] + '...'}
@@ -26,88 +31,138 @@ class ChatService:
         user_message = ChatMessage.objects.create(
             session=session,
             role="user",
-            content=content
+            content=content or f"[Selection] {selected_node_uuid}"
         )
 
-        # 2. 【新增优化】：在识别意图前，先获取该 Session 的历史上下文
-        # 查询最近 6 条历史对话 (按照时间逆序)
+        # 0. 毫秒级硬拦截 (Hard Circuit Breaker)
+        crisis_check = crisis_interceptor.fast_check(content)
+        if crisis_check:
+            ai_structured_cards = crisis_check["structured_cards"]
+            self._fix_card_urls(ai_structured_cards)
+            
+            ai_message = ChatMessage.objects.create(
+                session=session,
+                role="ai",
+                content=crisis_check["reply"],
+                structured_cards=ai_structured_cards,
+                intent_type="CRISIS_ALERT"
+            )
+            
+            CrisisAlertLog.objects.get_or_create(
+                message=user_message,
+                defaults={
+                    "user": user,
+                    "risk_level": "极高危",
+                    "trigger_symptom": "正则硬命中"
+                }
+            )
+            
+            return {
+                "session_id": str(session.id),
+                "reply": crisis_check["reply"],
+                "structured_cards": ai_structured_cards,
+                "intent": {"intent_type": "CRISIS_ALERT"}
+            }
+
+        # 2. 获取历史上下文
         recent_messages = ChatMessage.objects.filter(session=session).order_by('-created_at')[:6]
-        # 反转顺序，并映射角色为 OpenAI 认可的 'assistant'
         history_list = [
             {"role": "assistant" if m.role == "ai" else m.role, "content": m.content} 
             for m in reversed(recent_messages) if m.id != user_message.id
         ]
 
-        # 3. 调用 LLM 服务进行意图与实体识别 (传入历史记录解决“意图遗忘”)
-        intent = llm_service.analyze_intent(content, history=history_list)
-        
-        # 4. 尝试进行图谱检索，获取 RAG Context
-        graph_context = graph_service.fetch_context_for_intent(intent, content)
-        
-        # 5. 图谱安全拦截（检查返回的树中是否有高危预警）
-        is_high_risk = False
-        emergency_action = None
-        
-        if graph_context and "symptoms" in graph_context:
-            for symptom in graph_context["symptoms"]:
-                if symptom.get("risk_info"):
-                    # 发现高危症状，触发熔断
-                    is_high_risk = True
-                    risk_info = symptom["risk_info"]
-                    emergency_action = risk_info.get("action", "系统检测到极度危险，请拨打24小时干预热线: 400-xxx-xxxx")
+        # --- 策略 A: 用户已经点击了选项 (Deep RAG Stage 2) ---
+        if selected_node_uuid:
+            logger.info(f"[RAG Stage 2] Fetching deep context for UUID: {selected_node_uuid}")
+            graph_context = graph_service.fetch_deep_context(selected_node_uuid)
+            ai_structured_cards = []
+            final_reply = "抱歉，我没有找到相关的图谱资料。"
+            
+            if graph_context:
+                problem_name = graph_context.get("problem_name", "这个问题")
+                final_reply = f"关于“{problem_name}”，我为你找到了一些可能有帮助的信息："
+                
+                for plan in graph_context.get("emergency_plans", []):
+                    ai_structured_cards.append({
+                        "type": "CRISIS", "title": plan.get("title", ""),
+                        "content": plan.get("content", ""),
+                        "extra_info": {"contacts": plan.get("contacts", "")}
+                    })
+                
+                for t in graph_context.get("treatments", []):
+                    ai_structured_cards.append({
+                        "type": "TREATMENT", "title": t.get("name", ""),
+                        "content": t.get("content") or t.get("method", ""),
+                        "extra_info": {"method": t.get("method", "")}
+                    })
                     
-                    # 写高危审计日志
-                    CrisisAlertLog.objects.create(
-                        user=user,
-                        message=user_message,
-                        risk_level=risk_info.get("level", "极高"),
-                        trigger_symptom=symptom.get("name")
-                    )
-                    break
+                for p in graph_context.get("policies", []):
+                    ai_structured_cards.append({
+                        "type": "POLICY", "title": p.get("name", ""),
+                        "content": p.get("content", ""),
+                        "extra_info": {"department": p.get("department", "")}
+                    })
                     
-        # 6. 回复与审计策略
-        if not is_high_risk and intent.intent_type == "CRISIS_ALERT":
-             is_high_risk = True
-             # 写高危审计日志（语义识别触发）
-             CrisisAlertLog.objects.create(
-                 user=user,
-                 message=user_message,
-                 risk_level="极高",
-                 trigger_symptom=f"LLM 语义识别: {intent.symptoms[0] if intent.symptoms else '未提取具体症状'}"
-             )
+                for a in graph_context.get("articles", []):
+                    ai_structured_cards.append({
+                        "type": "ARTICLE", "title": a.get("name", ""),
+                        "content": a.get("summary", ""),
+                        "extra_info": {"id": a.get("uuid", ""), "image": a.get("cover", ""), "url": a.get("url", "")}
+                    })
+            self._fix_card_urls(ai_structured_cards)
+            
+            ChatMessage.objects.create(
+                session=session,
+                role="ai",
+                content=final_reply,
+                structured_cards=ai_structured_cards,
+                intent_type="QUERY_TREATMENT"
+            )
+            
+            return {
+                "session_id": str(session.id),
+                "reply": final_reply,
+                "structured_cards": ai_structured_cards,
+                "stage": "FINAL"
+            }
 
-        # 7. 生成回复策略
-        if is_high_risk or intent.intent_type == "CRISIS_ALERT":
-            # 【熔断机制】直接返回静态应急预案
-            final_reply = emergency_action if emergency_action else "同学，系统检测到您当前可能处于极度痛苦中。请立即拨打校园 24 小时心理危机干预热线: 400-xxx-xxxx。"
-            ai_structured_cards = [{
-                "type": "CRISIS",
-                "title": "紧急干预资源",
-                "content": final_reply,
-                "extra_info": {"level": "极高", "location": "校医院心理科/校保卫处"}
-            }]
-        else:
-            # 普通的 RAG 生成模式，调用 LLM 获取结构化响应 (同样传入历史)
-            llm_res = llm_service.generate_response(content, graph_context, history=history_list)
-            final_reply = llm_res.content
-            
-            # 将 LLM 提取的卡片转化为数据库存储格式
-            ai_structured_cards = [card.model_dump() for card in llm_res.cards]
-            
-        # 8. 入库系统回复
-        ai_message = ChatMessage.objects.create(
+        # --- 策略 B: 普通文本对话 (Empathy + Options Stage 1) ---
+        # 1. 向量混合检索候选
+        candidates = graph_service.find_candidates(content, top_k=5)
+        
+        # 2. LLM 生成共情并从中挑选
+        initial_res = llm_service.get_empathy_and_options(content, candidates, history=history_list)
+        
+        final_reply = initial_res.empathy_reply
+        options = initial_res.options  # 这里的 options 会包含 [{uuid, name}, ...]
+        
+        ChatMessage.objects.create(
             session=session,
             role="ai",
             content=final_reply,
-            structured_cards=ai_structured_cards,
-            intent_type=intent.intent_type
+            structured_cards=[], # 选项不入库为卡片，前端根据 options 渲染
+            intent_type=initial_res.intent_type
         )
         
         return {
             "session_id": str(session.id),
             "reply": final_reply,
-            "structured_cards": ai_structured_cards,
-            "intent": intent.model_dump()
+            "options": options,
+            "stage": "RECOMMEND"
         }
+
+    def _fix_card_urls(self, cards):
+        if not cards: return
+        backend_url = getattr(settings, 'BACKEND_URL', 'http://localhost:8000').rstrip('/')
+        def _fix(obj):
+            if isinstance(obj, list):
+                for item in obj: _fix(item)
+            elif isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k in ['cover', 'image', 'avatar'] and isinstance(v, str):
+                        if v and not v.startswith(('http')):
+                            obj[k] = f"{backend_url}/{v.lstrip('/')}"
+                    else: _fix(v)
+        _fix(cards)
 
 chat_service = ChatService()

@@ -1,0 +1,13 @@
+uuid,名称,category,subcategory,风险等级
+24caf30a-5f9a-56f6-b09d-e3cdddf48df8,学业压力,ACADEMIC,考试焦虑,普通
+cd24ace0-b10c-519e-8d35-b7c4b0f68829,前途焦虑,CAREER,职业规划,普通
+c00acdef-10da-5705-93b6-fe004053fed8,校园霸凌与孤立,INTERPERSONAL,社交压力,高危
+32816f48-0a46-5d7c-8d94-19d6ce37ef4c,社交恐惧症,INTERPERSONAL,社交避让,普通
+302a7073-f3d6-573a-8149-c2592d398b64,双相情感障碍,EMOTIONAL,复杂情绪,高危
+45535044-eebf-57ce-872f-fe0dc3de4c8e,抑郁发作,EMOTIONAL,情绪抑郁,高危
+3c7ef7f7-fb52-5cf0-a26e-26d101de1ef4,自残倾向,CRISIS,自伤行为,极高危
+a542b375-94f9-56cf-8686-e5dbe1336391,自杀意愿,CRISIS,自杀倾向,极高危
+d6c91687-ea07-51ab-923c-bc3b15ace2fc,完美主义带来的停滞,ACADEMIC,表现焦虑,普通
+62868d3d-5bfd-57bc-b3d5-24fdf08a53b6,科研倦怠,ACADEMIC,导师关系,普通
+7dcb854b-ebf2-580c-af61-614274045434,跨专业适应困难,CAREER,专业调剂,普通
+981fcfc1-1ace-55d9-b7e7-675a7f199b23,失恋心理创伤,EMOTIONAL,情感丧失,普通

@@ -1,0 +1,62 @@
+[
+    {
+        "source_label": "症状",
+        "source_key": "名称",
+        "source_value": "自残冲动",
+        "target_label": "风险等级",
+        "target_key": "名称",
+        "target_value": "极高",
+        "relation": "触发预警",
+        "properties": { "描述": "即刻危险信号，触发红色预警熔断" }
+    },
+    {
+        "source_label": "症状",
+        "source_key": "名称",
+        "source_value": "绝望感",
+        "target_label": "风险等级",
+        "target_key": "名称",
+        "target_value": "极高",
+        "relation": "触发预警",
+        "properties": { "描述": "核心负面信念，属于特级预警范畴" }
+    },
+    {
+        "source_label": "症状",
+        "source_key": "名称",
+        "source_value": "严重失眠",
+        "target_label": "风险等级",
+        "target_key": "名称",
+        "target_value": "高危",
+        "relation": "触发预警",
+        "properties": { "描述": "生理基础严重受损，需心理干预" }
+    },
+    {
+        "source_label": "症状",
+        "source_key": "名称",
+        "source_value": "惊恐发作",
+        "target_label": "风险等级",
+        "target_key": "名称",
+        "target_value": "高危",
+        "relation": "触发预警",
+        "properties": { "描述": "强烈躯体不适，伴有极度恐惧" }
+    },
+    {
+        "source_label": "症状",
+        "source_key": "名称",
+        "source_value": "频繁缺课",
+        "target_label": "风险等级",
+        "target_key": "名称",
+        "target_value": "中等",
+        "relation": "触发预警",
+        "properties": { "描述": "社会功能受损信号" }
+    },
+    {
+        "source_label": "症状",
+        "source_key": "名称",
+        "source_value": "成绩断崖式下跌",
+        "target_label": "风险等级",
+        "target_key": "名称",
+        "target_value": "中等",
+        "relation": "触发预警",
+        "properties": { "描述": "学业表现异常，需导师介入" }
+    }
+]

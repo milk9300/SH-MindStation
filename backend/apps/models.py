@@ -189,3 +189,61 @@ class AuditLog(models.Model):
     class Meta:
         db_table = 'sys_audit_log'
         ordering = ['-created_at']
+
+
+class RiskLevel(models.Model):
+    """
+    sec_risk_level: 风险等级维度定义
+    """
+    name = models.CharField("等级名称", max_length=50, unique=True) # 普通, 高危, 极高危
+    description = models.TextField("等级描述", null=True, blank=True)
+    score_range = models.CharField("得分范围", max_length=50, null=True, blank=True)
+    color_code = models.CharField("显示颜色", max_length=20, default="#67C23A")
+    priority = models.IntegerField("优先级", default=0)
+
+    class Meta:
+        db_table = 'sec_risk_level'
+        verbose_name = '风险等级'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return self.name
+
+
+class CrisisKeyword(models.Model):
+    """
+    sec_crisis_keyword: 违规词/敏感词库
+    """
+    word = models.CharField("关键词/正则", max_length=100, unique=True)
+    level = models.ForeignKey(RiskLevel, on_delete=models.CASCADE, related_name='keywords', verbose_name="风险等级", default=1)
+    is_active = models.BooleanField("是否启用", default=True)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        db_table = 'sec_crisis_keyword'
+        verbose_name = '违规关键词'
+        verbose_name_plural = verbose_name
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.word} ({self.level.name})"
+
+
+class EmergencyPlan(models.Model):
+    """
+    sec_emergency_plan: 紧急救援/干预预案
+    """
+    risk_level = models.ForeignKey(RiskLevel, on_delete=models.CASCADE, related_name='plans')
+    title = models.CharField("预案标题", max_length=100)
+    content = models.TextField("干预内容/资源描述")
+    contacts = models.CharField("联系电话/机构", max_length=200, null=True, blank=True)
+    domain = models.CharField("适用领域", max_length=50, default='GENERAL') # CRISIS, ACADEMIC...
+
+    class Meta:
+        db_table = 'sec_emergency_plan'
+        verbose_name = '紧急预案'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return f"{self.title} ({self.risk_level.name})"

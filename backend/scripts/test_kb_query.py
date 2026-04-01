@@ -15,7 +15,8 @@ def test_query():
     print("正在模拟 GraphRAG 检索：用户提到‘期末考试挂科恐惧’")
     
     # 模拟从症状反查问题名称（假设用户说想不开，系统匹配到期末考焦虑）
-    problem_name = "期末考试挂科恐惧"
+    # 模拟从症状反查问题名称
+    problem_name = "毕业季求职受挫"
     
     # 调用底层图谱聚合接口
     graph_data = neo4j_repo.get_psychological_problem_graph(problem_name)

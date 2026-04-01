@@ -13,7 +13,10 @@ from .views import (
     AuditLogViewSet,
     ArticleViewSet,
     AssessmentScaleViewSet,
-    AssessmentRecordViewSet
+    AssessmentRecordViewSet,
+    CrisisKeywordViewSet,
+    RiskLevelViewSet,
+    EmergencyPlanViewSet
 )
 from .graph_views import GraphDumpView, EntityDetailView, EdgeManagementView, EntitySearchView, EntityCreateView
 from .stats_views import DashboardStatsView
@@ -28,6 +31,9 @@ router.register(r'audit', AuditLogViewSet, basename='audit')
 router.register(r'articles', ArticleViewSet, basename='article')
 router.register(r'scales', AssessmentScaleViewSet, basename='scale')
 router.register(r'assessments', AssessmentRecordViewSet, basename='assessment')
+router.register(r'crisis-keywords', CrisisKeywordViewSet, basename='crisis-keyword')
+router.register(r'risk-levels', RiskLevelViewSet, basename='risk-level')
+router.register(r'emergency-plans', EmergencyPlanViewSet, basename='emergency-plan')
 
 
 urlpatterns = [

@@ -4,7 +4,7 @@
 			<text class="article-title">{{ data.title }}</text>
 			<view class="article-meta">
 				<text class="meta-icon">📖</text>
-				<text class="meta-text">{{ data.content || '校心理咨询中心' }}</text>
+				<text class="meta-text">阅读文章了解更多</text>
 			</view>
 		</view>
 		<view class="article-image">
@@ -110,7 +110,10 @@ const handleNavigate = () => {
 	.meta-text {
 		font-size: 22rpx;
 		color: $sh-text-sub;
-		white-space: pre-wrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 380rpx;
 	}
 }
 

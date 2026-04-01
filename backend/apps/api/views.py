@@ -10,14 +10,73 @@ from rest_framework.authtoken.models import Token
 from django.utils import timezone
 from apps.models import (
     User, ChatSession, ChatMessage, CrisisAlertLog, UserMoodLog, 
-    UserFavorite, AssessmentRecord, AuditLog, Article, AssessmentScale, AssessmentQuestion
+    UserFavorite, AssessmentRecord, AuditLog, Article, AssessmentScale, 
+    AssessmentQuestion, CrisisKeyword, RiskLevel, EmergencyPlan
 )
 from apps.api.serializers import (
     UserSerializer, UserDetailedSerializer, ChatSessionSerializer, ChatSessionListSerializer,
     ChatMessageSerializer, CrisisAlertLogSerializer, UserMoodLogSerializer, UserFavoriteSerializer, 
     AuditLogSerializer, ArticleSerializer, AssessmentScaleSerializer, AssessmentScaleListSerializer,
-    AssessmentQuestionSerializer, AssessmentRecordSerializer
+    AssessmentQuestionSerializer, AssessmentRecordSerializer, CrisisKeywordSerializer,
+    RiskLevelSerializer, EmergencyPlanSerializer
 )
+
+class RiskLevelViewSet(viewsets.ModelViewSet):
+    """
+    风险等级设置 (仅限管理员/高级别)
+    """
+    queryset = RiskLevel.objects.all().order_by('priority')
+    serializer_class = RiskLevelSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        audit_service.log_action(
+            self.request.user, 'SAFETY', 'CREATE',
+            f"定义了风险等级: {instance.name} (权重={instance.priority})",
+            get_client_ip(self.request)
+        )
+
+class EmergencyPlanViewSet(viewsets.ModelViewSet):
+    """
+    预警应对方案设置 (仅限管理员/高级别)
+    """
+    queryset = EmergencyPlan.objects.all().select_related('risk_level')
+    serializer_class = EmergencyPlanSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        audit_service.log_action(
+            self.request.user, 'SAFETY', 'CREATE',
+            f"新增了处理预案: {instance.title} (关联等级={instance.risk_level.name if instance.risk_level else 'N/A'})",
+            get_client_ip(self.request)
+        )
+
+class CrisisKeywordViewSet(viewsets.ModelViewSet):
+    """
+    违规词/敏感词管理 (仅限管理员)
+    """
+    queryset = CrisisKeyword.objects.all().select_related('level')
+    serializer_class = CrisisKeywordSerializer
+    permission_classes = [permissions.IsAuthenticated] # 实际生产中应加 IsAdminUser
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        audit_service.log_action(
+            self.request.user, 'SAFETY', 'CREATE',
+            f"新增了违规词: {instance.word} (级别={instance.level.name if instance.level else 'N/A'})",
+            get_client_ip(self.request)
+        )
+
+    def perform_destroy(self, instance):
+        word = instance.word
+        audit_service.log_action(
+            self.request.user, 'SAFETY', 'DELETE',
+            f"删除了违规词: {word}",
+            get_client_ip(self.request)
+        )
+        instance.delete()
 from apps.services.chat_service import chat_service
 from apps.services.audit_service import audit_service
 
@@ -259,16 +318,22 @@ class ChatInteractView(APIView):
         user = request.user
         session_id = request.data.get('session_id')
         content = request.data.get('content')
+        selected_node_uuid = request.data.get('selected_node_uuid')  # 新增：用户选择的节点 UUID
 
-        if not all([session_id, content]):
-            return Response({"error": "session_id and content are required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not session_id:
+            return Response({"error": "session_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not content and not selected_node_uuid:
+            return Response({"error": "content or selected_node_uuid is required"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # 触发核心 RAG 流水线
-            result = chat_service.process_message(user, session_id, content)
+            # 触发核心 RAG 流水线 (支持两阶段交互)
+            result = chat_service.process_message(user, session_id, content, selected_node_uuid=selected_node_uuid)
             return Response(result)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            import traceback
+            logger.error(f"Chat interaction error: {str(e)}\n{traceback.format_exc()}")
+            return Response({"error": "Internal server error during chat processing."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserMoodLogViewSet(viewsets.ModelViewSet):
@@ -405,12 +470,13 @@ class ArticleViewSet(viewsets.ModelViewSet):
         
         # 自动同步创建图谱节点
         query = '''
-        CREATE (n:`心理文章` {uuid: $uuid, 名称: $title, 描述: '', url: $url})
+        MERGE (n:`心理文章` {uuid: $uuid})
+        SET n.名称 = $title, n.`封面图` = $cover, n.url = $url, n.`描述` = ''
         '''
         try:
             from apps.repositories.neo4j_repo import neo4j_repo
             with neo4j_repo.driver.session() as session:
-                session.run(query, uuid=new_uuid, title=instance.title, url=instance.id)
+                session.run(query, uuid=new_uuid, title=instance.title, cover=instance.cover_image or '', url=instance.id)
         except Exception as e:
             import logging
             logging.error(f"Failed to create Neo4j node for article {instance.id}: {str(e)}")
@@ -427,6 +493,20 @@ class ArticleViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         handler = self._get_handler()
         instance = serializer.save()
+        
+        # 同步更新图谱节点
+        query = '''
+        MATCH (n:`心理文章` {uuid: $uuid})
+        SET n.名称 = $title, n.`封面图` = $cover
+        '''
+        try:
+            from apps.repositories.neo4j_repo import neo4j_repo
+            with neo4j_repo.driver.session() as session:
+                session.run(query, uuid=instance.id, title=instance.title, cover=instance.cover_image or '')
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to update Neo4j node for article {instance.id}: {str(e)}")
+
         if handler:
             audit_service.log_action(
                 handler, 'ARTICLES', 'UPDATE',
