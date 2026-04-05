@@ -11,7 +11,7 @@
 			>
 				<view class="fav-type-tag">{{ item.target_type === 'article' ? '科普' : '内容' }}</view>
 				<view class="fav-info">
-					<text class="fav-id">ID: {{ item.target_id }}</text>
+					<text class="fav-title">{{ item.target_title || '收藏内容' }}</text>
 					<text class="fav-date">收藏于 {{ formatDate(item.created_at) }}</text>
 				</view>
 				<view class="fav-arrow">›</view>
@@ -50,7 +50,8 @@ const fetchFavorites = async () => {
 			method: 'GET',
 			data: { target_type: 'article' }
 		})
-		favorites.value = Array.isArray(res) ? res : []
+		const list = res.results || res || []
+		favorites.value = Array.isArray(list) ? list : []
 	} catch (err) {
 		console.error('Fetch favorites error:', err)
 	} finally {
@@ -103,10 +104,17 @@ onMounted(() => {
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		.fav-id {
-			font-size: 28rpx;
+		.fav-title {
+			font-size: 30rpx;
+			font-weight: 500;
 			color: $sh-text-main;
-			margin-bottom: 6rpx;
+			margin-bottom: 8rpx;
+			// 标题过长省略
+			display: -webkit-box;
+			-webkit-box-orient: vertical;
+			-webkit-line-clamp: 1;
+			line-clamp: 1;
+			overflow: hidden;
 		}
 		.fav-date {
 			font-size: 22rpx;

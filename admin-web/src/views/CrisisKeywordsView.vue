@@ -44,6 +44,17 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="pagination-footer">
+        <el-pagination
+          v-model:current-page="currentPage"
+          :page-size="20"
+          :total="total"
+          layout="prev, pager, next, total"
+          background
+          @current-change="fetchData"
+        />
+      </div>
     </el-card>
 
     <!-- 编辑/新增对话框 -->
@@ -94,6 +105,8 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const keywords = ref<any[]>([])
 const riskLevels = ref<any[]>([])
+const total = ref(0)
+const currentPage = ref(1)
 
 const form = ref({
   id: null,
@@ -106,11 +119,13 @@ const fetchData = async () => {
   loading.value = true
   try {
     const [keywordsRes, levelsRes]: any = await Promise.all([
-      apiClient.get('/crisis-keywords/'),
+      apiClient.get('/crisis-keywords/', { params: { page: currentPage.value } }),
       apiClient.get('/risk-levels/')
     ])
-    keywords.value = keywordsRes
-    riskLevels.value = levelsRes
+    // 处理分页响应
+    keywords.value = Array.isArray(keywordsRes) ? keywordsRes : (keywordsRes.results || [])
+    total.value = keywordsRes.count || keywords.value.length
+    riskLevels.value = Array.isArray(levelsRes) ? levelsRes : (levelsRes.results || [])
   } catch (e) {
     ElMessage.error('加载详情失败')
   } finally {
@@ -223,5 +238,10 @@ onMounted(fetchData)
 }
 .table-card {
   border: 1px solid #e2e8f0;
+}
+.pagination-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

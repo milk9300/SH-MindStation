@@ -97,6 +97,17 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <div class="pagination-footer">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="20"
+        :total="total"
+        layout="prev, pager, next, total"
+        background
+        @current-change="fetchSessions"
+      />
+    </div>
   </el-card>
 </template>
 
@@ -108,13 +119,18 @@ import apiClient from '../utils/api'
 
 const tableData = ref<any[]>([])
 const loading = ref(false)
+const total = ref(0)
+const currentPage = ref(1)
 
 const fetchSessions = async () => {
   loading.value = true
   try {
-    const response: any = await apiClient.get('/sessions/')
-    // 初始化时没有 messages 且不处于 loading 状态
-    tableData.value = response.map((s: any) => ({ ...s, messages: [], loading: false }))
+    const response: any = await apiClient.get('/chat-sessions/', {
+      params: { page: currentPage.value }
+    })
+    const sessions = Array.isArray(response) ? response : (response.results || [])
+    tableData.value = sessions.map((s: any) => ({ ...s, messages: [], loading: false }))
+    total.value = response.count || tableData.value.length
   } catch (error) {
     ElMessage.error('无法拉取审计会话记录')
   } finally {
@@ -128,7 +144,7 @@ const handleExpandChange = async (row: any, expandedRows: any[]) => {
   if (isExpanded && (!row.messages || row.messages.length === 0)) {
     row.loading = true
     try {
-      const detail: any = await apiClient.get(`/sessions/${row.id}/`)
+      const detail: any = await apiClient.get(`/chat-sessions/${row.id}/`)
       row.messages = detail.messages
     } catch (e) {
       ElMessage.error('详细对话加载失败')
@@ -281,5 +297,10 @@ onMounted(() => {
 .text {
   margin: 0;
   white-space: pre-wrap;
+}
+.pagination-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

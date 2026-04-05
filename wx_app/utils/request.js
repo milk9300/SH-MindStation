@@ -25,11 +25,16 @@ const request = (options) => {
 					uni.removeStorageSync('student_user')
 					uni.showToast({ title: '请重新登录', icon: 'none' })
 					setTimeout(() => {
-						uni.reLaunch({ url: '/pages/register/index' }) // 静默登录会重新执行，所以跳注册也行
+						uni.reLaunch({ url: '/pages/register/index' })
 					}, 1000)
 					reject(res)
 				} else if (res.statusCode === 403) {
-					// 档案未完善，踢回注册页
+                    // 特殊情况：如果是危机预警拦截，不跳转，直接把数据传给页面渲染
+                    if (res.data && res.data.is_crisis) {
+                        resolve(res.data)
+                        return
+                    }
+					// 否则是档案未完善，踢回注册页
 					uni.removeStorageSync('profile_completed')
 					uni.showToast({ title: '请补充必要信息', icon: 'none' })
 					setTimeout(() => {

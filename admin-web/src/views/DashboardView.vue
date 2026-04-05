@@ -50,6 +50,25 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- KGraph Stats Row -->
+    <el-row :gutter="20" class="charts-row">
+      <!-- Pie Chart: Node Distribution -->
+      <el-col :span="12">
+        <el-card shadow="never" class="chart-card">
+          <template #header>图谱实体分布 (Node Types)</template>
+          <v-chart class="chart" :option="nodeOption" autoresize />
+        </el-card>
+      </el-col>
+
+      <!-- Pie Chart: Relationship Distribution -->
+      <el-col :span="12">
+        <el-card shadow="never" class="chart-card">
+          <template #header>图谱关系链路分布 (Relationship Types)</template>
+          <v-chart class="chart" :option="relOption" autoresize />
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
@@ -57,7 +76,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart, BarChart } from 'echarts/charts'
+import { LineChart, BarChart, PieChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import VChart, { THEME_KEY } from 'vue-echarts'
 import { provide } from 'vue'
@@ -68,6 +87,7 @@ use([
   CanvasRenderer,
   LineChart,
   BarChart,
+  PieChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
@@ -89,6 +109,7 @@ const summary = ref({
 
 const trendData = ref({ dates: [], counts: [] })
 const topSymptoms = ref([])
+const graphStats = ref({ nodes: [], relationships: [] })
 
 const fetchDashboardStats = async () => {
   loading.value = true
@@ -98,6 +119,7 @@ const fetchDashboardStats = async () => {
     summary.value = res.summary
     trendData.value = res.trends
     topSymptoms.value = res.top_symptoms
+    graphStats.value = res.graph_stats || { nodes: [], relationships: [] }
   } catch (e) {
     ElMessage.error('无法拉取大盘聚合数据')
     console.error(e)
@@ -167,6 +189,46 @@ const symptomOption = computed(() => {
           color: '#3b82f6',
           borderRadius: [0, 4, 4, 0]
         }
+      }
+    ]
+  }
+})
+
+const nodeOption = computed(() => {
+  return {
+    tooltip: { trigger: 'item', formatter: '{a} <br/>{b}: {c} ({d}%)' },
+    legend: { orient: 'vertical', right: 10, top: 'center' },
+    series: [
+      {
+        name: '节点分布',
+        type: 'pie',
+        radius: ['45%', '70%'],
+        avoidLabelOverlap: false,
+        itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+        label: { show: false, position: 'center' },
+        emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } },
+        labelLine: { show: false },
+        data: graphStats.value.nodes
+      }
+    ]
+  }
+})
+
+const relOption = computed(() => {
+  return {
+    tooltip: { trigger: 'item', formatter: '{a} <br/>{b}: {c} ({d}%)' },
+    legend: { orient: 'vertical', right: 10, top: 'center' },
+    series: [
+      {
+        name: '关系链路',
+        type: 'pie',
+        radius: ['45%', '70%'],
+        avoidLabelOverlap: false,
+        itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+        label: { show: false, position: 'center' },
+        emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } },
+        labelLine: { show: false },
+        data: graphStats.value.relationships
       }
     ]
   }

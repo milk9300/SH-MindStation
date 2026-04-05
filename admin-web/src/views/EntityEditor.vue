@@ -1,12 +1,17 @@
 <template>
   <div class="entity-editor-container">
     <GraphCanvas
+      ref="graphCanvasRef"
       :data="filteredGraphData"
       :loading="loading"
       :available-types="availableTypes"
       v-model:selected-types="selectedTypes"
+      :fetch-neighbors="fetchNeighbors"
+      :search-results="searchResults"
+      :search-loading="searchLoading"
       @node-click="openEntityDrawer"
-      @refresh="fetchGraphData"
+      @refresh="fetchGraphData('initial')"
+      @search="searchNodes"
       @create-node="createNodeDialogVisible = true"
     />
 
@@ -22,6 +27,7 @@
       @unlink="handleUnlink"
       @update-edge="handleUpdateEdgeProp"
       @open-bind="(type) => { currentRelType = type; bindDialogVisible = true }"
+      @locate="handleLocateNode"
     />
 
     <CreateNodeDialog
@@ -43,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import GraphCanvas from '../components/Graph/GraphCanvas.vue'
 import EntityDetailDrawer from '../components/Graph/EntityDetailDrawer.vue'
 import CreateNodeDialog from '../components/Graph/CreateNodeDialog.vue'
@@ -68,6 +74,7 @@ const {
   searchResults,
   bindActionLoading,
   fetchGraphData,
+  fetchNeighbors,
   openEntityDrawer,
   saveEntityChanges,
   deleteEntity,
@@ -77,6 +84,14 @@ const {
   searchNodes,
   confirmBind
 } = useGraphEditor()
+const graphCanvasRef = ref<any>(null)
+
+const handleLocateNode = (uuid: string) => {
+  drawerVisible.value = false
+  setTimeout(() => {
+    graphCanvasRef.value?.locateNode(uuid)
+  }, 200)
+}
 
 const filteredGraphData = computed(() => {
   const filteredNodes = rawGraphData.value.nodes.filter(n => selectedTypes.value.includes(n.nodeType || ''))
@@ -86,7 +101,7 @@ const filteredGraphData = computed(() => {
 })
 
 onMounted(() => {
-  fetchGraphData()
+  fetchGraphData('initial')
 })
 </script>
 

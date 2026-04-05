@@ -31,77 +31,42 @@
       <el-empty v-if="articles.length === 0 && !loading" description="暂无文章内容" />
     </div>
 
-    <!-- 编辑抽屉 -->
-    <el-drawer
-      v-model="drawerVisible"
-      :title="isEdit ? '编辑文章' : '发布文章'"
-      size="600px"
-      destroy-on-close
-    >
-      <el-form :model="form" label-position="top" class="article-form">
-        <el-form-item label="文章唯一 ID (系统自动分配与节点绑定)" v-if="isEdit">
-          <el-input v-model="form.id" disabled />
-        </el-form-item>
-        <el-form-item label="文章标题" required>
-          <el-input v-model="form.title" placeholder="输入引人入胜的标题" />
-        </el-form-item>
-        <el-form-item label="封面图片 URL">
-          <el-input v-model="form.cover_image" placeholder="https://example.com/image.jpg" />
-        </el-form-item>
-        <el-form-item label="文章作者">
-          <el-input v-model="form.author" placeholder="作者名" />
-        </el-form-item>
-        <el-form-item label="发布状态">
-          <el-radio-group v-model="form.status">
-            <el-radio label="published">立即发布</el-radio>
-            <el-radio label="draft">暂存草稿</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="文章正文内容 (支持 Markdown/文本)" required>
-          <el-input
-            v-model="form.content"
-            type="textarea"
-            :rows="15"
-            placeholder="在这里输入文章详细内容..."
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <div class="drawer-footer">
-          <el-button @click="drawerVisible = false">取消</el-button>
-          <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存并提交</el-button>
-        </div>
-      </template>
-    </el-drawer>
+    <div class="pagination-footer">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="20"
+        :total="total"
+        layout="prev, pager, next, total"
+        background
+        @current-change="fetchArticles"
+      />
+    </div>
+
+    <!-- 抽屉已迁移至详情页 -->
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import apiClient from '../utils/api'
 
+const router = useRouter()
 const loading = ref(false)
-const submitLoading = ref(false)
-const drawerVisible = ref(false)
-const isEdit = ref(false)
 const articles = ref<any[]>([])
-
-const form = ref({
-  id: '',
-  title: '',
-  cover_image: '',
-  content: '',
-  author: '心理中心',
-  status: 'published'
-})
+const total = ref(0)
+const currentPage = ref(1)
 
 const fetchArticles = async () => {
   loading.value = true
   try {
-    const res: any = await apiClient.get('/articles/')
-    articles.value = res
+    const res: any = await apiClient.get('/articles/', {
+      params: { page: currentPage.value }
+    })
+    articles.value = Array.isArray(res) ? res : (res.results || [])
+    total.value = res.count || articles.value.length
   } catch (e) {
     ElMessage.error('加载文章列表失败')
   } finally {
@@ -110,45 +75,11 @@ const fetchArticles = async () => {
 }
 
 const handleAdd = () => {
-  isEdit.value = false
-  form.value = {
-    id: '',
-    title: '',
-    cover_image: '',
-    content: '',
-    author: '心理中心',
-    status: 'published'
-  }
-  drawerVisible.value = true
+  router.push('/articles/new')
 }
 
 const handleEdit = (item: any) => {
-  isEdit.value = true
-  form.value = { ...item }
-  drawerVisible.value = true
-}
-
-const handleSubmit = async () => {
-  if (!form.value.title || !form.value.content) {
-    return ElMessage.warning('请填写必填项')
-  }
-
-  submitLoading.value = true
-  try {
-    if (isEdit.value) {
-      await apiClient.put(`/articles/${form.value.id}/`, form.value)
-      ElMessage.success('文章更新成功')
-    } else {
-      await apiClient.post('/articles/', form.value)
-      ElMessage.success('文章发布成功')
-    }
-    drawerVisible.value = false
-    fetchArticles()
-  } catch (e) {
-    ElMessage.error('保存失败，请检查 ID 是否冲突')
-  } finally {
-    submitLoading.value = false
-  }
+  router.push(`/articles/${item.id}`)
 }
 
 const handleDelete = (item: any) => {
@@ -169,6 +100,7 @@ const handleDelete = (item: any) => {
 
 onMounted(fetchArticles)
 </script>
+
 
 <style scoped>
 .articles-container {
@@ -269,5 +201,11 @@ onMounted(fetchArticles)
 
 .article-form {
   padding: 0 10px;
+}
+.pagination-footer {
+  margin-top: 30px;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 20px;
 }
 </style>

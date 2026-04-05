@@ -58,6 +58,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "core.middleware.dfa_middleware.DFAMiddleware",
 ]
 
 # CORS Authorization for separate frontend server (Vue/Vite)
@@ -158,6 +159,15 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
     ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+}
+
+# 腾讯云 ASR 配置
+TENCENT_CLOUD_CONFIG = {
+    'SECRET_ID': os.getenv('TENCENT_CLOUD_SECRET_ID'),
+    'SECRET_KEY': os.getenv('TENCENT_CLOUD_SECRET_KEY'),
+    'REGION': 'ap-shanghai'
 }
 
 # CORS Config
@@ -172,3 +182,23 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "neo4j")
 LLM_API_KEY = os.getenv("LLM_API_KEY")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL")
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME")
+
+# Redis Cache Configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": os.getenv("REDIS_URL", "redis://:123456@127.0.0.1:6379/1"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "IGNORE_EXCEPTIONS": False,  # 现在有了密码，不再忽略异常，方便调试
+        }
+    }
+}
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://:123456@127.0.0.1:6379/1")
+CELERY_RESULT_BACKEND = os.getenv("REDIS_URL", "redis://:123456@127.0.0.1:6379/1")
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Shanghai'

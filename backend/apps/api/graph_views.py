@@ -7,16 +7,24 @@ from apps.models import User
 
 class GraphDumpView(APIView):
     """
-    导出全量(或部分)图谱数据用于 AntV G6 可视化渲染
+    导出图谱数据用于 AntV G6 可视化渲染。支持全量和初始(核心)加载。
     """
     def get(self, request):
+        mode = request.query_params.get('mode', 'full') # initial | full
         try:
-            # 简化版：直接通过 Repository 执行原生 Cypher 获取 G6 格式数据
-            query = '''
-            MATCH (n)
-            OPTIONAL MATCH (n)-[r]->(m)
-            RETURN collect(distinct n) as nodes, collect(distinct r) as relationships
-            '''
+            if mode == 'initial':
+                # 初始模式：返回空，由用户通过搜索开始探索
+                return Response({
+                    "nodes": [],
+                    "edges": []
+                })
+            else:
+                query = '''
+                MATCH (n)
+                OPTIONAL MATCH (n)-[r]->(m)
+                RETURN collect(distinct n) as nodes, collect(distinct r) as relationships
+                '''
+            
             with neo4j_repo.driver.session() as session:
                 result = session.run(query).single()
                 
@@ -28,9 +36,6 @@ class GraphDumpView(APIView):
                     for node in result['nodes']:
                         label = list(node.labels)[0] if node.labels else 'Unknown'
                         props = dict(node)
-                        
-                        # 智能提取一个最核心的描述字段，避免全部拼接导致回显冗余
-                        # 优先级：原理 > 步骤 > 诊断标准 > 描述
                         primary_desc = props.get('原理') or props.get('步骤') or props.get('诊断标准') or props.get('描述') or ''
                         
                         g6_nodes.append({
@@ -56,9 +61,60 @@ class GraphDumpView(APIView):
                     "edges": g6_edges
                 })
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return Response({"error": "Failed to dump graph data"}, status=500)
+            return Response({"error": f"Failed to dump graph data: {str(e)}"}, status=500)
+
+class EntityNeighborsView(APIView):
+    """
+    拉取指定节点的邻居节点及关系，用于按需动态拓展
+    """
+    def get(self, request, node_id):
+        try:
+            # 这里的 node_id 是 Neo4j 的原生 ID
+            query = '''
+            MATCH (n) WHERE id(n) = $node_id
+            OPTIONAL MATCH (n)-[r]-(m)
+            RETURN n, collect(distinct m) as neighbors, collect(distinct r) as relationships
+            '''
+            with neo4j_repo.driver.session() as session:
+                result = session.run(query, node_id=int(node_id)).single()
+                if not result:
+                    return Response({"error": "Node not found"}, status=404)
+                
+                g6_nodes = []
+                g6_edges = []
+                
+                def _build_g6_node(node):
+                    label = list(node.labels)[0] if node.labels else 'Unknown'
+                    props = dict(node)
+                    primary_desc = props.get('原理') or props.get('步骤') or props.get('诊断标准') or props.get('描述') or ''
+                    return {
+                        "id": str(node.id),
+                        "uuid": props.get('uuid', ''),
+                        "name": props.get('名称', '未命名'),
+                        "label": label,
+                        "description": primary_desc
+                    }
+
+                # 邻居节点 (过滤掉可能的 None)
+                for neighbor in result['neighbors']:
+                    if neighbor:
+                        g6_nodes.append(_build_g6_node(neighbor))
+                
+                # 处理连线
+                for rel in result['relationships']:
+                    if rel:
+                        g6_edges.append({
+                            "source": str(rel.start_node.id),
+                            "target": str(rel.end_node.id),
+                            "label": rel.type
+                        })
+                
+                return Response({
+                    "nodes": g6_nodes,
+                    "edges": g6_edges
+                })
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
 
 
 class EntityCreateView(APIView):
@@ -327,6 +383,40 @@ class EdgeManagementView(APIView):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+from apps.services.graph_service import graph_service
+
+class KnowledgeDetailView(APIView):
+    """
+    提供心理问题的全量知识图谱上下文（用于知识库详情页）
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    def get(self, request, uuid):
+        try:
+            # 1. 获取深度背景
+            context = graph_service.fetch_deep_context(uuid)
+            if not context:
+                return Response({'error': '未找到相关知识'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # 2. 补全静态资源 URL
+            # 注意：chat_service 中也有类似的 _fix_card_urls 逻辑，
+            # 为了保持 API 的自闭环，我们在 View 层也做一次简单的 URL 修复。
+            from django.conf import settings
+            backend_url = getattr(settings, 'BACKEND_URL', 'http://localhost:8000').rstrip('/')
+            
+            def _fix_urls(obj):
+                if isinstance(obj, list):
+                    for i in obj: _fix_urls(i)
+                elif isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if k in ['cover', 'image', 'avatar'] and isinstance(v, str) and v and not v.startswith('http'):
+                            obj[k] = f"{backend_url}/{v.lstrip('/')}"
+                        _fix_urls(v)
+            
+            _fix_urls(context)
+            return Response(context)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class EntitySearchView(APIView):
     """
     提供实体节点的远程模糊搜索，用于建立关联
@@ -339,13 +429,14 @@ class EntitySearchView(APIView):
         query = '''
         MATCH (n)
         WHERE n.`名称` CONTAINS $keyword
-        RETURN n.uuid as uuid, n.`名称` as name, labels(n)[0] as label
+        RETURN id(n) as node_id, n.uuid as uuid, n.`名称` as name, labels(n)[0] as label
         LIMIT 20
         '''
         try:
             with neo4j_repo.driver.session() as session:
                 result = session.run(query, keyword=keyword)
                 nodes = [{
+                    "id": str(record['node_id']),
                     "uuid": record['uuid'],
                     "name": record['name'],
                     "label": record['label']
@@ -353,3 +444,97 @@ class EntitySearchView(APIView):
                 return Response(nodes)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class KnowledgeHomeView(APIView):
+    """
+    提供知识库首页数据：热门标签、分类筛选、搜索列表
+    """
+    def get(self, request):
+        query_str = request.query_params.get('q', '')
+        label_filter = request.query_params.get('label', '全部')
+        
+        # 1. 热门搜索/推荐 (选取连接数较多的节点作为探索入口)
+        hot_query = """
+        MATCH (n)
+        WHERE labels(n)[0] IN ['心理问题', '应对技巧', '校园政策', '症状']
+        RETURN n.`名称` as name, count{(n)--()} as connection_count
+        ORDER BY connection_count DESC
+        LIMIT 8
+        """
+        
+        # 2. 列表查询分页参数
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 30))
+        except (ValueError, TypeError):
+            page, page_size = 1, 30
+            
+        skip = (page - 1) * page_size
+        list_params = {"keyword": query_str, "skip": skip, "limit": page_size}
+        
+        cypher_filter = ""
+        # 安全校验标签，防止注入
+        valid_labels = ['心理问题', '应对技巧', '校园政策', '症状']
+        if label_filter != '全部' and label_filter in valid_labels:
+            cypher_filter = f":`{label_filter}`"
+            
+        list_query = f"""
+        MATCH (n{cypher_filter})
+        WHERE (n.`名称` CONTAINS $keyword OR n.`描述` CONTAINS $keyword OR n.`内容` CONTAINS $keyword OR n.`内容摘要` CONTAINS $keyword)
+        AND labels(n)[0] IN ['心理问题', '应对技巧', '校园政策', '症状']
+        RETURN n.uuid as uuid, n.`名称` as name, labels(n)[0] as label, 
+               COALESCE(n.`描述`, n.`内容`, n.`内容摘要`, n.`说明`, '') as content,
+               COALESCE(n.`封面图`, n.`cover`, '') as cover
+        SKIP $skip LIMIT $limit
+        """
+        
+        try:
+            with neo4j_repo.driver.session() as session:
+                # 获取热门标签
+                hot_res = session.run(hot_query)
+                hot_tags = [r['name'] for r in hot_res]
+                
+                # 获取列表结果
+                list_res = session.run(list_query, **list_params)
+                entities = []
+                
+                # 获取后端基础 URL 用于拼接图片路径
+                from django.conf import settings
+                backend_url = getattr(settings, 'BACKEND_URL', 'http://localhost:8000').rstrip('/')
+                
+                for r in list_res:
+                    cover = r['cover']
+                    if cover and not cover.startswith('http'):
+                        cover = f"{backend_url}/{cover.lstrip('/')}"
+                        
+                    entities.append({
+                        "uuid": r['uuid'],
+                        "name": r['name'],
+                        "label": r['label'],
+                        "content": r['content'][:80] + ('...' if len(r['content']) > 80 else ''),
+                        "cover": cover
+                    })
+                
+                # 固定的业务分类
+                categories = [
+                    {"id": "全部", "name": "全部"},
+                    {"id": "心理问题", "name": "心理问题"},
+                    {"id": "应对技巧", "name": "应对技巧"},
+                    {"id": "校园政策", "name": "校园政策"},
+                    {"id": "症状", "name": "症状"}
+                ]
+                
+                return Response({
+                    "categories": categories,
+                    "hot_tags": hot_tags,
+                    "entities": entities,
+                    "pagination": {
+                        "page": page,
+                        "page_size": page_size,
+                        "has_more": len(entities) == page_size
+                    }
+                })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({'error': str(e)}, status=500)

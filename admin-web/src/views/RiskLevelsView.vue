@@ -14,14 +14,14 @@
       <el-table :data="levels" stripe style="width: 100%">
         <el-table-column prop="level" label="分值 (权重)" width="120" sortable>
           <template #default="scope">
-            <el-tag effect="dark" :color="scope.row.color" style="border: none">
-              {{ scope.row.level }}
+            <el-tag effect="dark" :color="scope.row.color || scope.row.color_code || '#409EFF'" style="border: none">
+              {{ scope.row.level ?? scope.row.priority }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="name" label="等级名称" width="180">
           <template #default="scope">
-            <span :style="{ color: scope.row.color, fontWeight: 'bold' }">{{ scope.row.name }}</span>
+            <span :style="{ color: scope.row.color || scope.row.color_code, fontWeight: 'bold' }">{{ scope.row.name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="description" label="详细描述" min-width="300" />
@@ -32,6 +32,17 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="pagination-footer">
+        <el-pagination
+          v-model:current-page="currentPage"
+          :page-size="20"
+          :total="total"
+          layout="prev, pager, next, total"
+          background
+          @current-change="fetchLevels"
+        />
+      </div>
     </el-card>
 
     <!-- 编辑/新增对话框 -->
@@ -90,6 +101,8 @@ const submitLoading = ref(false)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const levels = ref<any[]>([])
+const total = ref(0)
+const currentPage = ref(1)
 
 const form = ref({
   id: null,
@@ -102,8 +115,11 @@ const form = ref({
 const fetchLevels = async () => {
   loading.value = true
   try {
-    const res: any = await apiClient.get('/risk-levels/')
-    levels.value = res
+    const res: any = await apiClient.get('/risk-levels/', {
+      params: { page: currentPage.value }
+    })
+    levels.value = Array.isArray(res) ? res : (res.results || [])
+    total.value = res.count || levels.value.length
   } catch (e) {
     ElMessage.error('加载等级失败')
   } finally {
@@ -187,5 +203,10 @@ onMounted(fetchLevels)
 }
 .table-card {
   border: 1px solid #e2e8f0;
+}
+.pagination-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

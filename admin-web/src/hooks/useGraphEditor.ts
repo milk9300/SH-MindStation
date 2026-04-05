@@ -4,6 +4,13 @@ import apiClient from '../utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getSchemaByLabel } from '../config/graphNodeSchema'
 
+export const colorMap: Record<string, string> = {
+  '心理问题': '#0ea5e9', '症状': '#f59e0b', '治疗方案': '#10b981', 
+  '高危': '#ef4444', '风险等级': '#dc2626', '心理文章': '#8b5cf6',
+  '应急预案': '#be123c', '应对技巧': '#059669', '校园政策': '#0284c7', '校园机构': '#4f46e5',
+  'Root': '#1e293b'
+}
+
 export function useGraphEditor() {
   const loading = ref(false)
   const rawGraphData = ref<GraphData>({ nodes: [], edges: [] })
@@ -26,31 +33,46 @@ export function useGraphEditor() {
   const searchResults = ref<any[]>([])
   const bindActionLoading = ref(false)
 
-  const colorMap: Record<string, string> = {
-    '心理问题': '#0891b2', '症状': '#f59e0b', '治疗方案': '#22c55e', 
-    '高危': '#ef4444', '风险等级': '#dc2626', '心理文章': '#8b5cf6',
-    '应急预案': '#be123c', '应对技巧': '#10b981', '校园政策': '#0284c7', '校园机构': '#4338ca'
-  }
 
   const currentSchema = computed(() => getSchemaByLabel(selectedNode.value?.label || ''))
 
-  const fetchGraphData = async () => {
+  const fetchGraphData = async (mode: 'full' | 'initial' = 'full') => {
     loading.value = true
     try {
-      const data: any = await apiClient.get('/graph/dump/')
+      const data: any = await apiClient.get('/graph/dump/', { params: { mode } })
       rawGraphData.value = {
-        nodes: (data.nodes || []).map((n: any) => ({
-          ...n,
-          label: n.name,
-          nodeType: n.label,
-          style: { fill: colorMap[n.label] || '#e2e8f0', stroke: 'white', lineWidth: 2 }
-        })),
+        nodes: (data.nodes || []).map((n: any) => {
+          const isRoot = n.isRoot;
+          return {
+            ...n,
+            label: n.name,
+            nodeType: n.label,
+            size: isRoot ? 80 : 55,
+            style: { 
+              fill: colorMap[n.label] || '#94a3b8', 
+              stroke: isRoot ? '#334155' : '#fff', 
+              lineWidth: isRoot ? 5 : 2,
+              shadowColor: 'rgba(0,0,0,0.1)',
+              shadowBlur: 10
+            },
+            labelCfg: { 
+              position: 'bottom',
+              offset: 5,
+              style: { 
+                fontSize: isRoot ? 14 : 12, 
+                fontWeight: isRoot ? 'bold' : 'normal',
+                fill: '#334155'
+              } 
+            }
+          };
+        }),
         edges: data.edges || []
       }
 
       availableTypes.value = Array.from(new Set(rawGraphData.value.nodes.map(n => n.nodeType || '')))
-      if (selectedTypes.value.length === 0 && availableTypes.value.includes('心理问题')) {
-        selectedTypes.value = ['心理问题']
+      // 初始加载时默认选中主类
+      if (mode === 'initial') {
+        selectedTypes.value = ['心理问题', '症状', '治疗方案', 'Root'].filter(t => availableTypes.value.includes(t))
       } else if (selectedTypes.value.length === 0 && availableTypes.value.length > 0) {
         selectedTypes.value = [availableTypes.value[0]]
       }
@@ -58,6 +80,26 @@ export function useGraphEditor() {
       ElMessage.error('获取图谱数据失败')
     } finally {
       loading.value = false
+    }
+  }
+
+  const fetchNeighbors = async (nodeId: string): Promise<GraphData> => {
+    try {
+      const data: any = await apiClient.get(`/graph/entity/${nodeId}/neighbors/`)
+      return {
+        nodes: (data.nodes || []).map((n: any) => ({
+          ...n,
+          label: n.name,
+          nodeType: n.label,
+          size: 55,
+          style: { fill: colorMap[n.label] || '#94a3b8', stroke: '#fff', lineWidth: 2 },
+          labelCfg: { position: 'bottom', offset: 5, style: { fontSize: 12, fill: '#334155' } }
+        })),
+        edges: data.edges || []
+      }
+    } catch (err) {
+      ElMessage.error('扩展邻居节点失败')
+      return { nodes: [], edges: [] }
     }
   }
 
@@ -79,7 +121,7 @@ export function useGraphEditor() {
 
       selectedNode.value = res
       if (res.label === '心理问题' || res.label === '症状') {
-        activeTab.value = '具有症状'
+        activeTab.value = '临床症状'
       } else {
         activeTab.value = 'recommend'
       }
@@ -166,8 +208,15 @@ export function useGraphEditor() {
     if (!q) return
     searchLoading.value = true
     try {
-      const res: any = await apiClient.get('/graph/search/', { params: { q } })
-      searchResults.value = res
+      const res: any[] = await apiClient.get('/graph/search/', { params: { q } })
+      searchResults.value = res.map(node => ({
+        ...node,
+        label: node.name,
+        nodeType: node.label,
+        size: 60,
+        style: { fill: colorMap[node.label] || '#94a3b8', stroke: '#fff', lineWidth: 3, shadowBlur: 15, shadowColor: 'rgba(0,0,0,0.2)' },
+        labelCfg: { position: 'bottom', offset: 5, style: { fontSize: 13, fontWeight: 'bold', fill: '#1e293b' } }
+      }))
     } finally {
       searchLoading.value = false
     }
@@ -215,6 +264,7 @@ export function useGraphEditor() {
     searchResults,
     bindActionLoading,
     fetchGraphData,
+    fetchNeighbors,
     openEntityDrawer,
     saveEntityChanges,
     deleteEntity,

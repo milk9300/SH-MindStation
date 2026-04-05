@@ -47,6 +47,18 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('../views/ArticlesView.vue')
   },
   {
+    path: '/articles/:id',
+    name: 'ArticleDetail',
+    component: () => import('../views/ArticleDetailView.vue'),
+    props: true
+  },
+  {
+    path: '/articles/new',
+    name: 'ArticleCreate',
+    component: () => import('../views/ArticleDetailView.vue')
+  },
+
+  {
     path: '/scales',
     name: 'Scales',
     component: () => import('../views/ScalesView.vue')

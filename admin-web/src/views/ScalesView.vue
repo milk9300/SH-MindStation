@@ -34,6 +34,17 @@
       </el-table-column>
     </el-table>
 
+    <div class="pagination-footer">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="20"
+        :total="total"
+        layout="prev, pager, next, total"
+        background
+        @current-change="fetchScales"
+      />
+    </div>
+
     <!-- 基本信息编辑抽屉 -->
     <el-drawer v-model="infoDrawerVisible" :title="isEdit ? '编辑量表基础信息' : '新建量表'" size="500px">
       <el-form :model="form" label-position="top">
@@ -103,6 +114,8 @@ const infoDrawerVisible = ref(false)
 const questionDrawerVisible = ref(false)
 const questionLoading = ref(false)
 const isEdit = ref(false)
+const total = ref(0)
+const currentPage = ref(1)
 
 const scales = ref<any[]>([])
 const currentScale = ref<any>(null)
@@ -127,8 +140,11 @@ const scoringRulesStr = computed({
 const fetchScales = async () => {
   loading.value = true
   try {
-    const res: any = await apiClient.get('/scales/')
-    scales.value = res
+    const res: any = await apiClient.get('/scales/', {
+      params: { page: currentPage.value }
+    })
+    scales.value = Array.isArray(res) ? res : (res.results || [])
+    total.value = res.count || scales.value.length
   } catch (e) {
     ElMessage.error('加载量表列表失败')
   } finally {
@@ -333,5 +349,10 @@ onMounted(fetchScales)
   border-radius: 4px;
   border: 1px solid #e1e7ef;
   gap: 8px;
+}
+.pagination-footer {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

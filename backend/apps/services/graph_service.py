@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from apps.repositories.neo4j_repo import neo4j_repo
 from apps.services.llm_service import UserIntentAnalysis
 from apps.services.embedding_service import embedding_service
@@ -73,18 +74,54 @@ class GraphService:
         # 归一化键名，方便 LLM 处理 (将中文键名 '.名称' 映射为 'name')
         normalized = []
         for c in raw_candidates:
+            # 尝试关联物理地点信息，以便 AI 进行“干预执行”引导
+            location_info = ""
+            if "校园地点" in c.get("_labels", []):
+                location_info = f" [地点: {c.get('名称')}]"
+            elif c.get("location"): # 处理已有的关联属性
+                location_info = f" [建议地点: {c.get('location')}]"
+
             normalized.append({
                 "uuid": c.get("uuid"),
-                "name": c.get("名称"), # 关键：映射中文键名
+                "name": f"{c.get('名称')}{location_info}",
                 "description": c.get("描述", "")
             })
         return normalized
 
-    def fetch_deep_context(self, uuid: str) -> dict:
+    def fetch_deep_context(self, uuid: str, current_month: str = None) -> dict:
         """
-        根据 UUID 直接获取图谱深度背景，并补充 MySQL 中的风险等级与应急预案信息。
+        根据 UUID 获取图谱深度背景。
+        优先获取“时空感知”的上下文卡片（包含校园事件与地点），
+        如果未提供月份或查询失败，则退回到基础版本。
         """
-        context = neo4j_repo.get_psychological_problem_graph(uuid=uuid)
+        # 如果没有传月份，自动获取当前月份（如：'4月'）
+        if not current_month:
+            current_month = f"{datetime.now().month}月"
+            
+        logger.info(f"Fetching context-aware graph for UUID {uuid} in {current_month}")
+        context = neo4j_repo.get_context_aware_graph(uuid, current_month)
+        
+        # 优化回退与合并逻辑：如果时空感知查询结果中缺乏核心推荐内容（方案或文章），则拉取标准库内容进行补充
+        if not context or (not context.get("treatments") and not context.get("articles")):
+            logger.info(f"Context-aware recommendations are sparse, fetching standard resources for UUID: {uuid}")
+            std_context = neo4j_repo.get_psychological_problem_graph(uuid=uuid)
+            
+            if not context:
+                context = std_context
+            elif std_context:
+                # 合并内容，优先保留时空感知结果，补充标准库结果
+                for key in ["treatments", "articles", "campus_policies", "symptoms"]:
+                    if not context.get(key) and std_context.get(key):
+                        context[key] = std_context[key]
+        
+        # [NEW] 回退逻辑：如果以上针对“心理问题”的特定检索（时空感知、标准库）均未命中（UUID 对应节点非心理问题）
+        if not context:
+            logger.info(f"UUID {uuid} is not a Psychological Problem or sparse, trying generic entity detail...")
+            context = neo4j_repo.get_entity_detail(uuid)
+            if context:
+                # 标记为通用实体类型，方便前端识别导航逻辑
+                context['is_generic_entity'] = True
+        
         return self._append_safety_info(context)
 
     def _append_safety_info(self, context: dict) -> dict:

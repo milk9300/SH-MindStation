@@ -45,6 +45,17 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="pagination-footer">
+        <el-pagination
+          v-model:current-page="currentPage"
+          :page-size="20"
+          :total="total"
+          layout="prev, pager, next, total"
+          background
+          @current-change="fetchUsers"
+        />
+      </div>
     </el-card>
 
     <!-- 用户侧边档案抽屉 -->
@@ -110,6 +121,8 @@ use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
 const loading = ref(false)
 const search = ref('')
 const users = ref([])
+const total = ref(0)
+const currentPage = ref(1)
 const drawerVisible = ref(false)
 const selectedUser = ref<any>(null)
 
@@ -122,8 +135,12 @@ const filteredUsers = computed(() => {
 const fetchUsers = async () => {
   loading.value = true
   try {
-    const res: any = await apiClient.get('/users/')
-    users.value = res
+    const res: any = await apiClient.get('/users/', {
+      params: { page: currentPage.value, search: search.value }
+    })
+    // 支持分页与非分页（保险起见）
+    users.value = Array.isArray(res) ? res : (res.results || [])
+    total.value = res.count || users.value.length
   } catch (e) {
     ElMessage.error('获取学生列表失败')
   } finally {
@@ -223,5 +240,10 @@ onMounted(fetchUsers)
   color: #94a3b8;
   font-style: italic;
   font-size: 13px;
+}
+.pagination-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

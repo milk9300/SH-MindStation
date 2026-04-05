@@ -27,6 +27,7 @@ apiClient.interceptors.request.use(
 // 响应拦截器：统一处理错误
 apiClient.interceptors.response.use(
   (response) => {
+    // 直接返回原始数据，由各页面自行处理分页逻辑
     return response.data
   },
   (error) => {

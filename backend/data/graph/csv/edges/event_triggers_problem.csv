@@ -1,0 +1,6 @@
+source_uuid,target_uuid,relation,weight
+2d8d73b3-9aeb-5326-84f0-2ca8185cebee,24caf30a-5f9a-56f6-b09d-e3cdddf48df8,诱发问题,1.0
+2d8d73b3-9aeb-5326-84f0-2ca8185cebee,d6c91687-ea07-51ab-923c-bc3b15ace2fc,诱发问题,0.8
+5f5cb3d0-e8b2-51e2-87c0-e1c473c4947a,cd24ace0-b10c-519e-8d35-b7c4b0f68829,诱发问题,1.0
+5f5cb3d0-e8b2-51e2-87c0-e1c473c4947a,7dcb854b-ebf2-580c-af61-614274045434,诱发问题,0.7
+86550c14-74b0-57fb-978a-5f8bf3bdc3e2,32816f48-0a46-5d7c-8d94-19d6ce37ef4c,诱发问题,0.9

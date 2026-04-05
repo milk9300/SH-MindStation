@@ -1,26 +1,7 @@
 <template>
 	<view class="container">
 		<view class="section-header">
-			<text class="section-title">📚 心理科普</text>
-		</view>
-		
-		<view class="article-list">
-			<view 
-				class="article-card" 
-				v-for="item in articles" 
-				:key="item.id"
-				@click="openArticle(item)"
-			>
-				<image class="article-cover" :src="item.cover_image" mode="aspectFill"></image>
-				<view class="article-info">
-					<text class="article-title">{{ item.title }}</text>
-					<text class="article-meta">{{ item.author }} · {{ formatDate(item.created_at) }}</text>
-				</view>
-			</view>
-		</view>
-		
-		<view class="section-header" style="margin-top: 40rpx;">
-			<text class="section-title">📋 心理测评</text>
+			<text class="section-title">📋 心理测评列表</text>
 		</view>
 		
 		<view class="scale-list">
@@ -33,49 +14,55 @@
 				<view class="scale-icon">📝</view>
 				<view class="scale-body">
 					<text class="scale-name">{{ scale.name }}</text>
-					<text class="scale-desc">{{ scale.question_count }} 道题 · 约 {{ Math.ceil(scale.question_count * 0.5) }} 分钟</text>
+					<text class="scale-desc">{{ scale.question_count || 0 }} 道题 · 约 {{ Math.ceil((scale.question_count || 0) * 0.5) }} 分钟</text>
 				</view>
 				<view class="scale-arrow">›</view>
 			</view>
 		</view>
 		
-		<view v-if="loading" class="loading-tip">
-			<text>加载中...</text>
+		<view class="loading-status" v-if="loading || !hasMore">
+			<text v-if="loading">正在加载测评量表...</text>
+			<text v-else-if="!hasMore && scales.length > 0">已加载全部测评</text>
 		</view>
 	</view>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { onReachBottom } from '@dcloudio/uni-app'
 import request from '@/utils/request.js'
 
-const articles = ref([])
 const scales = ref([])
+const page = ref(1)
+const hasMore = ref(true)
 const loading = ref(false)
 
-const formatDate = (dateStr) => {
-	if (!dateStr) return ''
-	return dateStr.substring(0, 10)
-}
-
-const fetchData = async () => {
+const fetchData = async (isRefresh = false) => {
+	if (loading.value) return
+	if (isRefresh) {
+		page.value = 1
+		scales.value = []
+		hasMore.value = true
+	}
+	
 	loading.value = true
 	try {
-		const artRes = await request({ url: '/articles/', method: 'GET' })
-		const scaleRes = await request({ url: '/scales/', method: 'GET' })
-		articles.value = Array.isArray(artRes) ? artRes : []
-		scales.value = Array.isArray(scaleRes) ? scaleRes : []
+		const res = await request({ 
+			url: `/scales/?page=${page.value}`, 
+			method: 'GET' 
+		})
+		const newItems = res.results || []
+		scales.value.push(...newItems)
+		
+		hasMore.value = !!res.next
+		if (hasMore.value) {
+			page.value++
+		}
 	} catch (err) {
-		console.error('Fetch discovery data error:', err)
+		console.error('Fetch scale data error:', err)
 	} finally {
 		loading.value = false
 	}
-}
-
-const openArticle = (item) => {
-	uni.navigateTo({
-		url: `/pages/discovery/article-detail?id=${item.id}`
-	})
 }
 
 const startAssessment = (scale) => {
@@ -85,7 +72,13 @@ const startAssessment = (scale) => {
 }
 
 onMounted(() => {
-	fetchData()
+	fetchData(true)
+})
+
+onReachBottom(() => {
+	if (!loading.value && hasMore.value) {
+		fetchData()
+	}
 })
 </script>
 
@@ -96,7 +89,8 @@ onMounted(() => {
 	min-height: 100vh;
 }
 .section-header {
-	margin-bottom: 24rpx;
+	margin-bottom: 30rpx;
+	padding: 10rpx 0;
 }
 .section-title {
 	font-size: 34rpx;
@@ -104,87 +98,47 @@ onMounted(() => {
 	color: $sh-text-main;
 }
 
-// 文章卡片
-.article-list {
-	display: flex;
-	flex-direction: column;
-	gap: 24rpx;
-}
-.article-card {
-	@include sh-card;
-	display: flex;
-	align-items: center;
-	padding: 20rpx;
-	.article-cover {
-		width: 180rpx;
-		height: 120rpx;
-		border-radius: $sh-radius-sm;
-		flex-shrink: 0;
-		background: #eee;
-	}
-	.article-info {
-		flex: 1;
-		margin-left: 24rpx;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-	}
-	.article-title {
-		font-size: 28rpx;
-		font-weight: 500;
-		color: $sh-text-main;
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		overflow: hidden;
-		margin-bottom: 10rpx;
-	}
-	.article-meta {
-		font-size: 22rpx;
-		color: $sh-text-sub;
-	}
-}
-
 // 量表卡片
 .scale-list {
 	display: flex;
 	flex-direction: column;
-	gap: 20rpx;
+	gap: 24rpx;
 }
 .scale-card {
 	@include sh-card;
 	display: flex;
 	align-items: center;
-	padding: 28rpx;
+	padding: 32rpx;
+	background: #fff;
 	.scale-icon {
-		font-size: 48rpx;
-		margin-right: 20rpx;
+		font-size: 52rpx;
+		margin-right: 24rpx;
 	}
 	.scale-body {
 		flex: 1;
 	}
 	.scale-name {
 		display: block;
-		font-size: 28rpx;
-		font-weight: 500;
+		font-size: 30rpx;
+		font-weight: 600;
 		color: $sh-text-main;
-		margin-bottom: 6rpx;
+		margin-bottom: 10rpx;
 	}
 	.scale-desc {
 		display: block;
-		font-size: 22rpx;
+		font-size: 24rpx;
 		color: $sh-text-sub;
 	}
 	.scale-arrow {
 		font-size: 40rpx;
-		color: $sh-text-sub;
+		color: $sh-border;
+		margin-left: 10rpx;
 	}
 }
 
-.loading-tip {
+.loading-status {
 	text-align: center;
-	padding: 40rpx;
+	padding: 50rpx 0;
 	color: $sh-text-sub;
 	font-size: 24rpx;
 }

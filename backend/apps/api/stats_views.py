@@ -44,13 +44,28 @@ class DashboardStatsView(APIView):
                 .order_by('-count')[:10]
             )
 
-            # 5. Neo4j 图谱总节点规模 (需要连图数据库)
+            # 5. Neo4j 图谱结构精细化统计
             neo4j_nodes_count = 0
+            graph_stats = {
+                "nodes": [],
+                "relationships": []
+            }
             try:
                 with neo4j_repo.driver.session() as session:
+                    # 总节点
                     res = session.run("MATCH (n) RETURN count(n) as node_count").single()
-                    if res:
-                        neo4j_nodes_count = res["node_count"]
+                    if res: neo4j_nodes_count = res["node_count"]
+                    
+                    # 按照实体类别统计 (返回 List[{name, value}])
+                    node_dist = session.run("MATCH (n) RETURN head(labels(n)) as label, count(n) as count")
+                    for record in node_dist:
+                        if record['label']:
+                            graph_stats['nodes'].append({"name": record['label'], "value": record['count']})
+                            
+                    # 按照链路类别统计 (返回 List[{name, value}])
+                    rel_dist = session.run("MATCH ()-[r]->() RETURN type(r) as type, count(r) as count")
+                    for record in rel_dist:
+                        graph_stats['relationships'].append({"name": record['type'], "value": record['count']})
             except Exception as e:
                 print(f"Neo4j query failed: {e}")
 
@@ -62,6 +77,7 @@ class DashboardStatsView(APIView):
                     "pending_alerts": pending_alerts,
                     "total_nodes": neo4j_nodes_count
                 },
+                "graph_stats": graph_stats,
                 "trends": {
                     "dates": dates_list,
                     "counts": trend_data

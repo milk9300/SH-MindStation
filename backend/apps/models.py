@@ -37,7 +37,7 @@ class ChatSession(models.Model):
 
     class Meta:
         db_table = 'biz_chat_session'
-        ordering = ['-updated_at']
+        ordering = ['-updated_at', '-id']
 
 
 class ChatMessage(models.Model):
@@ -48,6 +48,8 @@ class ChatMessage(models.Model):
     role = models.CharField("消息角色", max_length=10) # user / ai
     content = models.TextField("文本内容")
     structured_cards = models.JSONField("图谱结构化数据", default=list, blank=True)
+    knowledge_base_uuid = models.CharField("关联知识库UUID", max_length=128, null=True, blank=True)
+    suggested_assessment = models.JSONField("测评建议数据", null=True, blank=True)
     intent_type = models.CharField("意图类型", max_length=50, null=True, blank=True)
     created_at = models.DateTimeField("发送时间", auto_now_add=True)
 
@@ -121,6 +123,7 @@ class AssessmentRecord(models.Model):
     total_score = models.IntegerField("总得分")
     result_level = models.CharField("测评结果", max_length=50)
     report_json = models.JSONField("详细得分", null=True, blank=True)
+    dimension_scores = models.JSONField("各维度得分", null=True, blank=True) # {"焦虑": 15, "抑郁": 10}
     created_at = models.DateTimeField("测评时间", auto_now_add=True)
 
     class Meta:
@@ -167,7 +170,8 @@ class AssessmentQuestion(models.Model):
     """
     scale = models.ForeignKey(AssessmentScale, on_delete=models.CASCADE, related_name='questions')
     sort_order = models.IntegerField("题号")
-    content = models.CharField("题干内容", max_length=500)
+    dimension = models.CharField("所属维度", max_length=50, null=True, blank=True) # 如: 焦虑, 抑郁, 躯体化
+    content = models.TextField("题干内容") # 改为 TextField 适应长场景描述
     options = models.JSONField("选项与分值") # [{"label": "没有", "score": 1}]
 
     class Meta:
@@ -239,6 +243,12 @@ class EmergencyPlan(models.Model):
     content = models.TextField("干预内容/资源描述")
     contacts = models.CharField("联系电话/机构", max_length=200, null=True, blank=True)
     domain = models.CharField("适用领域", max_length=50, default='GENERAL') # CRISIS, ACADEMIC...
+    
+    # [新增] 联动动作类型与渲染模板
+    action_type = models.CharField("动作类型", max_length=50, default='display_card')
+    template_name = models.CharField("渲染模板", max_length=100, default='default')
+    scale_id = models.CharField("关联量表ID", max_length=100, null=True, blank=True)
+    button_text = models.CharField("按钮文案", max_length=50, null=True, blank=True)
 
     class Meta:
         db_table = 'sec_emergency_plan'
@@ -247,3 +257,55 @@ class EmergencyPlan(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.risk_level.name})"
+
+
+class GuidanceQuestion(models.Model):
+    """
+    biz_guidance_question: 对话启动器 - 引导性初始问题
+    用于 AI 咨询首屏展示，引导用户快速开启对话。
+    """
+    class CategoryChoices(models.TextChoices):
+        GENERAL = 'general', '通用'
+        FRESHMAN = 'freshman', '新生适应'
+        ACADEMIC = 'academic', '学业压力'
+        EMOTION = 'emotion', '情绪困扰'
+        RELATIONSHIP = 'relationship', '人际关系'
+        CAREER = 'career', '就业规划'
+
+    text = models.CharField("引导问题", max_length=255)
+    category = models.CharField(
+        "问题类别", max_length=50,
+        choices=CategoryChoices.choices,
+        default=CategoryChoices.GENERAL
+    )
+    sort_order = models.IntegerField("排序权重", default=0, help_text="数值越大越靠前")
+
+    is_active = models.BooleanField("是否启用", default=True)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+
+    class Meta:
+        db_table = 'biz_guidance_question'
+        verbose_name = '引导问题'
+        verbose_name_plural = verbose_name
+        ordering = ['-sort_order', '-created_at']
+
+    def __str__(self):
+        return f"[{self.get_category_display()}] {self.text}"
+class ArticleComment(models.Model):
+    """
+    biz_article_comment: 文章评论表
+    支持对文章的一级评论及评论间的嵌套回复（扁平化处理）
+    """
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='comments')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='article_comments')
+    content = models.TextField("评论内容")
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies')
+    is_audit_passed = models.BooleanField("审核通过", default=True)
+    created_at = models.DateTimeField("评论时间", auto_now_add=True)
+
+    class Meta:
+        db_table = 'biz_article_comment'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.user.nickname}: {self.content[:20]}"

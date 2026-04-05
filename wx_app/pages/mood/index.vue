@@ -75,7 +75,8 @@ const fetchLogs = async () => {
 			url: '/moods/',
 			method: 'GET'
 		})
-		recentLogs.value = (res || []).slice(0, 7)
+		const list = res.results || (Array.isArray(res) ? res : [])
+		recentLogs.value = list.slice(0, 7)
 	} catch (err) {
 		console.error('Fetch mood logs error:', err)
 	}

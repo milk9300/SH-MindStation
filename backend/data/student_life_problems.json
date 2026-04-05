@@ -1,0 +1,75 @@
+[
+  {
+    "problem": {
+      "name": "失恋心理创伤",
+      "description": "由于恋爱关系破裂带来的情感痛苦、自我否定及生活秩序紊乱。",
+      "risk_level": "中",
+      "category": "情感问题"
+    },
+    "treatments": [
+      {
+        "name": "情绪宣泄与接纳",
+        "description": "允许自己悲伤，通过日记或倾诉释放压抑情感，接纳当前的失落感。",
+        "method": "每天抽出 20 分钟进行‘自由书写’，记录所有想对前任说的话但不发送。"
+      },
+      {
+        "name": "社会支持重建",
+        "description": "重新联系好友或参加社团活动，建立新的生活重心。",
+        "method": "每周至少参加一次社交活动，避免过度闭关。"
+      }
+    ],
+    "articles": [
+      {
+        "name": "失恋后的心理自救指南",
+        "summary": "从心理学角度拆解失恋的五个阶段，提供科学的疗愈建议。",
+        "cover": "images/articles/breakup_healing.jpg",
+        "url": "/articles/breakup-self-help"
+      }
+    ]
+  },
+  {
+    "problem": {
+      "name": "考试焦虑",
+      "description": "在考试前或考试期间出现的过度紧张、担忧及生理不适（如心跳加快、手汗）。",
+      "risk_level": "低",
+      "category": "学业压力"
+    },
+    "treatments": [
+      {
+        "name": "呼吸放松训练",
+        "description": "通过有节奏的深呼吸降低交感神经兴奋度。",
+        "method": "采用 4-7-8 呼吸法：吸气 4 秒，憋气 7 秒，呼气 8 秒，重复 5 组。"
+      }
+    ],
+    "articles": [
+      {
+        "name": "如何与考试压力共处",
+        "summary": "掌握考前心态调整的小技巧，告别‘考场大脑空白’。",
+        "cover": "images/articles/exam_anxiety.jpg",
+        "url": "/articles/exam-peace"
+      }
+    ]
+  },
+  {
+    "problem": {
+      "name": "科研/导师压力",
+      "description": "源于科研进展不顺、导师关系紧张或实验室任务过重带来的长期精神内耗。",
+      "risk_level": "中",
+      "category": "学业压力"
+    },
+    "treatments": [
+      {
+        "name": "边界感设立",
+        "description": "明确工作与社交的边界，学会合理拒绝非核心任务。",
+        "method": "建立每日‘科研截止时间’，之后不再回复非紧急消息。"
+      }
+    ],
+    "campus_policies": [
+      {
+        "name": "研究生心理申诉通道",
+        "content": "学校研工部设有专门的师生矛盾调解机制，保障学生合法权益。",
+        "department": "党委研工部"
+      }
+    ]
+  }
+]

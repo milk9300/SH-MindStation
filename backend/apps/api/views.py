@@ -1,4 +1,5 @@
 import requests
+import logging
 from django.conf import settings
 from rest_framework import viewsets, status, permissions
 from rest_framework.views import APIView
@@ -6,19 +7,23 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import authenticate
+
+logger = logging.getLogger(__name__)
 from rest_framework.authtoken.models import Token
 from django.utils import timezone
 from apps.models import (
     User, ChatSession, ChatMessage, CrisisAlertLog, UserMoodLog, 
     UserFavorite, AssessmentRecord, AuditLog, Article, AssessmentScale, 
-    AssessmentQuestion, CrisisKeyword, RiskLevel, EmergencyPlan
+    AssessmentQuestion, CrisisKeyword, RiskLevel, EmergencyPlan, GuidanceQuestion,
+    ArticleComment
 )
 from apps.api.serializers import (
     UserSerializer, UserDetailedSerializer, ChatSessionSerializer, ChatSessionListSerializer,
     ChatMessageSerializer, CrisisAlertLogSerializer, UserMoodLogSerializer, UserFavoriteSerializer, 
     AuditLogSerializer, ArticleSerializer, AssessmentScaleSerializer, AssessmentScaleListSerializer,
     AssessmentQuestionSerializer, AssessmentRecordSerializer, CrisisKeywordSerializer,
-    RiskLevelSerializer, EmergencyPlanSerializer
+    RiskLevelSerializer, EmergencyPlanSerializer, GuidanceQuestionSerializer,
+    ArticleCommentSerializer
 )
 
 class RiskLevelViewSet(viewsets.ModelViewSet):
@@ -456,12 +461,17 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         return AuditLog.objects.none()
 
 
+from rest_framework import viewsets, status, permissions, filters
+
 class ArticleViewSet(viewsets.ModelViewSet):
     """
     科普文章管理 (CMS)
     """
-    queryset = Article.objects.all()
+    queryset = Article.objects.all().order_by('-created_at')
     serializer_class = ArticleSerializer
+    lookup_field = 'id'  # 明确指定查找字段为 id
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['title', 'content', 'author']
 
     def perform_create(self, serializer):
         import uuid
@@ -538,6 +548,43 @@ class ArticleViewSet(viewsets.ModelViewSet):
     def _get_handler(self):
         return self.request.user if self.request.user.is_authenticated else None
 
+    @action(detail=True, methods=['get'], url_path='stats', url_name='stats')
+    def stats(self, request, id=None, **kwargs):
+        """
+        获取文章详情页统计数据: 收藏总数、评论总数、过去7天趋势
+        """
+        # 调试日志：确认请求到达
+        logger.info(f"Fetching stats for article ID: {id or kwargs.get('id')}")
+        instance = self.get_object()
+        now = timezone.now()
+        
+        # 统计数据
+        total_favorites = UserFavorite.objects.filter(target_type='Article', target_id=instance.id).count()
+        total_comments = instance.comments.count()
+        
+        # 过去 7 天趋势
+        daily_stats = []
+        for i in range(6, -1, -1):
+            date = (now - timezone.timedelta(days=i)).date()
+            f_count = UserFavorite.objects.filter(
+                target_type='Article', 
+                target_id=instance.id,
+                created_at__date=date
+            ).count()
+            c_count = instance.comments.filter(created_at__date=date).count()
+            daily_stats.append({
+                "date": date.strftime('%m-%d'),
+                "favorites": f_count,
+                "comments": c_count
+            })
+            
+        return Response({
+            "total_favorites": total_favorites,
+            "total_comments": total_comments,
+            "daily_stats": daily_stats
+        })
+
+
 
 class AssessmentScaleViewSet(viewsets.ModelViewSet):
     """
@@ -552,8 +599,15 @@ class AssessmentScaleViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         import uuid
-        new_uuid = str(uuid.uuid4())
+        # 如果请求中已经带了 ID（如种子脚本），则优先使用提供的 ID
+        provided_id = self.request.data.get('id')
+        if provided_id:
+            new_uuid = provided_id
+        else:
+            new_uuid = str(uuid.uuid4())
+        
         instance = serializer.save(id=new_uuid)
+
         
         # 自动同步创建图谱节点
         query = '''
@@ -629,5 +683,237 @@ class AssessmentScaleViewSet(viewsets.ModelViewSet):
             
         return Response({"status": "questions synced"})
 
-    def _get_handler(self):
-        return self.request.user if self.request.user.is_authenticated else None
+    @action(detail=True, methods=['post'])
+    def start(self, request, pk=None):
+        """开启测评会话 POST /api/scales/{id}/start/"""
+        from apps.services.assessment_service import assessment_service
+        try:
+            session_id, first_q = assessment_service.start_session(request.user.id, pk)
+            return Response({
+                "session_id": session_id,
+                "question": AssessmentQuestionSerializer(first_q).data
+            })
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='submit-step')
+    def submit_step(self, request):
+        """提交当前答案并获取下一题 POST /api/scales/submit-step/"""
+        from apps.services.assessment_service import assessment_service
+        session_id = request.data.get('session_id')
+        q_id = request.data.get('q_id')
+        option_label = request.data.get('label')
+        score = request.data.get('score')
+
+        if not all([session_id, q_id, score]):
+            return Response({"error": "Missing params"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            next_q, is_finished = assessment_service.submit_answer(session_id, q_id, option_label, score)
+            
+            if is_finished:
+                report = assessment_service.generate_final_report(request.user.id, session_id)
+                
+                # [新增] 闭环逻辑：如果有关联的触发消息，更新其状态并生成回馈
+                trigger_msg_id = request.data.get('trigger_msg_id')
+                if trigger_msg_id:
+                    try:
+                        msg = ChatMessage.objects.get(id=trigger_msg_id)
+                        # 更新卡片状态为已完成
+                        if not msg.suggested_assessment:
+                            msg.suggested_assessment = {}
+                        msg.suggested_assessment['is_completed'] = True
+                        msg.suggested_assessment['result'] = {
+                            'score': report.get('total_score'),
+                            'level': report.get('level'),
+                            'record_id': report.get('record_id')
+                        }
+                        msg.save()
+                        
+                        # 由 AI 发起针对性的回馈回复
+                        chat_service.generate_assessment_feedback(request.user, msg.session.id, report)
+                    except ChatMessage.DoesNotExist:
+                        logger.warning(f"Trigger message {trigger_msg_id} not found during assessment completion.")
+
+                audit_service.log_action(
+                    request.user, 'ASSESSMENT', 'COMPLETED',
+                    f"完成了测评: {report.get('scale_name', '未知量表')}, 得分: {report.get('total_score')}",
+                    get_client_ip(request)
+                )
+                return Response({"is_finished": True, "report": report})
+            
+            return Response({
+                "is_finished": False,
+                "next_question": AssessmentQuestionSerializer(next_q).data
+            })
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+from rest_framework.parsers import MultiPartParser
+from apps.api.utils.tencent_asr import TencentASR
+
+class STTAPIView(APIView):
+    """
+    语音转文字 (STT) 接口
+    """
+    parser_classes = [MultiPartParser]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if 'audio' not in request.FILES:
+            return Response({'error': 'No audio file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        audio_file = request.FILES['audio']
+        file_size = audio_file.size
+        content_type = audio_file.content_type
+        
+        print(f"DEBUG: Received audio file: {audio_file.name}, size: {file_size} bytes, type: {content_type}")
+
+        if file_size < 100:
+            return Response({'error': f'Audio file too small ({file_size} bytes)'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 获取文件名后缀或内容类型作为格式
+        voice_format = audio_file.name.split('.')[-1].lower()
+        if voice_format not in ['mp3', 'm4a', 'wav', 'pcm', 'aac']:
+            # 如果从后缀看不出来，尝试根据 hex 特征识别（备选逻辑）
+            voice_format = 'aac' 
+            
+        try:
+            audio_file.seek(0)
+            audio_data = audio_file.read()
+            
+            # 调试：打印前20个字节的十六进制
+            print(f"DEBUG: Audio Start Bytes (hex): {audio_data[:20].hex()}")
+            
+            asr_service = TencentASR()
+            text = asr_service.speech_to_text(audio_data, voice_format=voice_format)
+            print(f"DEBUG: ASR Result: {text}")
+            
+            logger.info(f"ASR Result: {text}")
+            return Response({'text': text})
+        except Exception as e:
+            logger.error(f"ASR processing failed: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# region 引导性问题系统 (Conversation Starters)
+class GuidanceQuestionListView(APIView):
+    """
+    对话启动器：返回随机引导问题。
+    GET /api/guidance-questions/?count=4&category=academic
+    - count: 返回数量（默认 4，上限 8）
+    - category: 按类别过滤（可选）
+    """
+    permission_classes = [permissions.AllowAny]
+
+    # 防止滥用的硬性上限
+    MAX_RETURN_COUNT = 8
+
+    def get(self, request):
+        count = min(
+            int(request.query_params.get('count', 4)),
+            self.MAX_RETURN_COUNT
+        )
+        category = request.query_params.get('category')
+
+        queryset = GuidanceQuestion.objects.filter(is_active=True)
+
+        # 如果前端传了 category，进行过滤
+        if category:
+            queryset = queryset.filter(category=category)
+
+        # 随机返回指定数量
+        questions = queryset.order_by('?')[:count]
+        serializer = GuidanceQuestionSerializer(questions, many=True)
+        return Response(serializer.data)
+
+
+class UserFavoriteViewSet(viewsets.ModelViewSet):
+    """
+    用户收藏管理: 支持对文章、知识点等的增删改查
+    """
+    serializer_class = UserFavoriteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # 仅返回且只能看到自己的收藏
+        return UserFavorite.objects.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        # 覆写 create 逻辑以支持接口幂等性，防止重复收藏报错
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        target_type = serializer.validated_data.get('target_type')
+        target_id = serializer.validated_data.get('target_id')
+        
+        # 使用 get_or_create 确保数据库层面的幂等
+        obj, created = UserFavorite.objects.get_or_create(
+            user=self.request.user,
+            target_type=target_type,
+            target_id=target_id,
+            defaults={'target_title': serializer.validated_data.get('target_title', '')}
+        )
+        
+        # 如果已经存在，直接返回其序列化结果
+        if not created:
+            return Response(self.get_serializer(obj).data, status=status.HTTP_200_OK)
+            
+        return Response(self.get_serializer(obj).data, status=status.HTTP_201_CREATED)
+# endregion
+
+# region 文章评论系统 (Article Comment System)
+from apps.services.crisis_service import crisis_interceptor
+
+class ArticleCommentViewSet(viewsets.ModelViewSet):
+    """
+    文章评论管理 (支持评论与一级回复)
+    """
+    queryset = ArticleComment.objects.filter(is_audit_passed=True, parent__isnull=True)
+    serializer_class = ArticleCommentSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def perform_create(self, serializer):
+        content = self.request.data.get('content', '')
+        # 敏感词硬拦截校验
+        crisis_check = crisis_interceptor.fast_check(content)
+        
+        is_passed = True
+        if crisis_check:
+            # 如果命中了风险词，标记为待审核/不通过
+            is_passed = False
+            logger.warning(f"Comment by User {self.request.user.id} hit crisis keywords: {content[:50]}...")
+
+        instance = serializer.save(user=self.request.user, is_audit_passed=is_passed)
+        
+        if not is_passed:
+            # 记录审计日志
+            from apps.services.audit_service import audit_service
+            audit_service.log_action(
+                self.request.user, 'COMMENTS', 'BLOCK',
+                f"提交的评论包含敏感内容被拦截: {content[:30]}",
+                get_client_ip(self.request)
+            )
+
+    def get_queryset(self):
+        # 如果是管理员，可以看到所有评论（包括未过审的）进行审核
+        article_id = self.request.query_params.get('article')
+        qs = ArticleComment.objects.filter(parent__isnull=True)
+        
+        if article_id:
+            qs = qs.filter(article_id=article_id)
+            
+        if self.request.user.is_authenticated and self.request.user.role == 'admin':
+            return qs.order_by('-created_at')
+            
+        return qs.filter(is_audit_passed=True).order_by('-created_at')
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
+    def audit(self, request, pk=None):
+        """管理员审核操作"""
+        comment = self.get_object()
+        is_passed = request.data.get('is_passed', True)
+        comment.is_audit_passed = is_passed
+        comment.save()
+        return Response({"status": "audited", "is_passed": is_passed})
+# endregion

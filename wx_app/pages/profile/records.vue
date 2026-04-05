@@ -1,7 +1,7 @@
 <template>
 	<view class="container">
 		<view class="record-list" v-if="records.length > 0">
-			<view class="record-card" v-for="item in records" :key="item.id">
+			<view class="record-card" v-for="item in records" :key="item.id" @click="viewReport(item)">
 				<view class="record-header">
 					<text class="scale-name">{{ item.scale_name }}</text>
 					<text class="record-date">{{ formatDate(item.created_at) }}</text>
@@ -36,6 +36,8 @@ import { ref, onMounted } from 'vue'
 import request from '@/utils/request.js'
 
 const records = ref([])
+const page = ref(1)
+const hasMore = ref(true)
 const loading = ref(false)
 
 const formatDate = (dateStr) => {
@@ -43,14 +45,27 @@ const formatDate = (dateStr) => {
 	return dateStr.substring(0, 16).replace('T', ' ')
 }
 
-const fetchRecords = async () => {
+const fetchRecords = async (isRefresh = false) => {
+	if (loading.value) return
+	if (isRefresh) {
+		page.value = 1
+		records.value = []
+		hasMore.value = true
+	}
+	
 	loading.value = true
 	try {
 		const res = await request({
-			url: '/assessments/',
+			url: `/assessments/?page=${page.value}`,
 			method: 'GET'
 		})
-		records.value = Array.isArray(res) ? res : []
+		const newItems = res.results || (Array.isArray(res) ? res : [])
+		records.value.push(...newItems)
+		
+		hasMore.value = !!res.next
+		if (hasMore.value) {
+			page.value++
+		}
 	} catch (err) {
 		console.error('Fetch records error:', err)
 	} finally {
@@ -58,12 +73,25 @@ const fetchRecords = async () => {
 	}
 }
 
+const viewReport = (item) => {
+	uni.navigateTo({
+		url: `/pages/discovery/assessment?record_id=${item.id}`
+	})
+}
+
 const goToDiscovery = () => {
 	uni.switchTab({ url: '/pages/discovery/index' })
 }
 
 onMounted(() => {
-	fetchRecords()
+	fetchRecords(true)
+})
+
+import { onReachBottom } from '@dcloudio/uni-app'
+onReachBottom(() => {
+	if (!loading.value && hasMore.value) {
+		fetchRecords()
+	}
 })
 </script>
 
@@ -81,6 +109,7 @@ onMounted(() => {
 .record-card {
 	@include sh-card;
 	padding: 30rpx;
+	background: #fff;
 }
 .record-header {
 	display: flex;
@@ -139,7 +168,8 @@ onMounted(() => {
 }
 .loading-state {
 	text-align: center;
-	padding: 100rpx;
+	padding: 50rpx 0;
 	color: $sh-text-sub;
+	font-size: 24rpx;
 }
 </style>

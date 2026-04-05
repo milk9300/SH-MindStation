@@ -2,16 +2,32 @@ from rest_framework import serializers
 from apps.models import (
     User, ChatSession, ChatMessage, CrisisAlertLog, UserMoodLog, 
     UserFavorite, AssessmentRecord, AuditLog, Article, AssessmentScale, 
-    AssessmentQuestion, CrisisKeyword, RiskLevel, EmergencyPlan
+    AssessmentQuestion, CrisisKeyword, RiskLevel, EmergencyPlan, GuidanceQuestion,
+    ArticleComment
 )
 
 class RiskLevelSerializer(serializers.ModelSerializer):
+    """
+    风险等级序列化器
+    level 和 color 字段用于对接 Vite 前端组件 (RiskLevelsView.vue)
+    """
+    level = serializers.IntegerField(source='priority', required=False)
+    color = serializers.CharField(source='color_code', required=False)
+    
     class Meta:
         model = RiskLevel
-        fields = '__all__'
+        fields = ['id', 'name', 'description', 'score_range', 'color', 'level', 'priority', 'color_code']
+        read_only_fields = ['level', 'color']
+
+    def get_level(self, obj):
+        return obj.priority
+
+    def get_color(self, obj):
+        return obj.color_code
 
 class EmergencyPlanSerializer(serializers.ModelSerializer):
     risk_level_name = serializers.CharField(source='risk_level.name', read_only=True)
+    risk_level_color = serializers.CharField(source='risk_level.color_code', read_only=True)
     
     class Meta:
         model = EmergencyPlan
@@ -44,10 +60,21 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class AssessmentRecordSerializer(serializers.ModelSerializer):
+    recommendations = serializers.SerializerMethodField()
+    
     class Meta:
         model = AssessmentRecord
         fields = '__all__'
         read_only_fields = ['user']
+
+    def get_recommendations(self, obj):
+        from apps.services.assessment_service import assessment_service
+        recommendations = {}
+        if obj.dimension_scores:
+            for dim, score in obj.dimension_scores.items():
+                if score > 3:
+                    recommendations[dim] = assessment_service._fetch_graph_resources(dim)
+        return recommendations
 
 
 class UserMoodLogSerializer(serializers.ModelSerializer):
@@ -70,9 +97,11 @@ class UserDetailedSerializer(serializers.ModelSerializer):
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
+    cards = serializers.JSONField(source='structured_cards', read_only=True)
+    
     class Meta:
         model = ChatMessage
-        fields = ['id', 'session', 'role', 'content', 'structured_cards', 'intent_type', 'created_at']
+        fields = ['id', 'session', 'role', 'content', 'cards', 'suggested_assessment', 'knowledge_base_uuid', 'intent_type', 'created_at']
 
 
 class ChatSessionListSerializer(serializers.ModelSerializer):
@@ -83,13 +112,19 @@ class ChatSessionListSerializer(serializers.ModelSerializer):
 
 
 class ChatSessionSerializer(serializers.ModelSerializer):
-    """包含完整聊天对话流，用于深度审计"""
+    """包含完整聊天对话流，用于深度审计与历史恢复"""
     messages = ChatMessageSerializer(many=True, read_only=True)
+    current_slots = serializers.SerializerMethodField()
 
     class Meta:
         model = ChatSession
-        fields = ['id', 'user', 'title', 'created_at', 'updated_at', 'messages']
-        read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'messages']
+        fields = ['id', 'user', 'title', 'created_at', 'updated_at', 'messages', 'current_slots']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'messages', 'current_slots']
+
+    def get_current_slots(self, obj):
+        from apps.services.chat_service import chat_service
+        return chat_service._get_session_slots(str(obj.id))
+
 
 
 class CrisisAlertLogSerializer(serializers.ModelSerializer):
@@ -130,10 +165,18 @@ class AuditLogSerializer(serializers.ModelSerializer):
 class ArticleSerializer(serializers.ModelSerializer):
     id = serializers.CharField(read_only=True)
     cover_image = serializers.SerializerMethodField()
+    favorite_count = serializers.SerializerMethodField()
+    comment_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Article
         fields = '__all__'
+
+    def get_favorite_count(self, obj):
+        return UserFavorite.objects.filter(target_type='Article', target_id=obj.id).count()
+
+    def get_comment_count(self, obj):
+        return obj.comments.count()
 
     def get_cover_image(self, obj):
         if not obj.cover_image:
@@ -150,6 +193,7 @@ class ArticleSerializer(serializers.ModelSerializer):
         from django.conf import settings
         backend_url = getattr(settings, 'BACKEND_URL', 'http://localhost:8000').rstrip('/')
         return f"{backend_url}/{obj.cover_image.lstrip('/')}"
+
 
 class AssessmentQuestionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -171,3 +215,39 @@ class AssessmentScaleSerializer(serializers.ModelSerializer):
         model = AssessmentScale
         fields = ['id', 'name', 'description', 'question_count', 'scoring_rules', 'questions', 'created_at']
 
+
+class GuidanceQuestionSerializer(serializers.ModelSerializer):
+    """对话启动器序列化"""
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+
+    class Meta:
+        model = GuidanceQuestion
+        fields = ['id', 'text', 'category', 'category_display', 'sort_order', 'is_active']
+
+
+class ArticleCommentSerializer(serializers.ModelSerializer):
+    user_nickname = serializers.CharField(source='user.nickname', read_only=True)
+    user_avatar = serializers.SerializerMethodField()
+    replies = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ArticleComment
+        fields = ['id', 'article', 'user', 'user_nickname', 'user_avatar', 'content', 'parent', 'is_audit_passed', 'created_at', 'replies']
+        read_only_fields = ['user', 'is_audit_passed']
+
+    def get_user_avatar(self, obj):
+        if not obj.user.avatar_url:
+            return None
+        if obj.user.avatar_url.startswith(('http://', 'https://')):
+            return obj.user.avatar_url
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri('/' + obj.user.avatar_url.lstrip('/'))
+        return obj.user.avatar_url
+
+    def get_replies(self, obj):
+        # 仅返回一级回复，支持树状结构但在序列化时扁平化
+        if obj.parent_id is None:
+            replies = ArticleComment.objects.filter(parent=obj, is_audit_passed=True)
+            return ArticleCommentSerializer(replies, many=True, context=self.context).data
+        return []

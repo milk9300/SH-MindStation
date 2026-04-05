@@ -98,42 +98,57 @@
 
       <!-- 下半部分：关系管理 Tabs -->
       <el-tabs v-if="relationships" :model-value="activeTab" @update:model-value="$emit('update:activeTab', $event)" class="relationship-tabs">
-        <el-tab-pane label="具有症状" name="具有症状">
+        <el-tab-pane label="临床症状" name="临床症状">
           <div class="tab-header">
             <span class="tab-desc">此问题关联的典型临床表现</span>
-            <el-button type="primary" plain size="small" @click="$emit('open-bind', '具有症状')">+ 新增症状关联</el-button>
+            <el-button type="primary" plain size="small" @click="$emit('open-bind', '临床症状')">+ 关联临床症状</el-button>
           </div>
-          <RelationshipTable 
-            :data="getRelationshipsByType('具有症状')" 
+          <RelationshipList 
+            :data="getRelationshipsByType('临床症状')" 
             @update-prop="(rel, val) => $emit('update-edge', rel, val)"
             @unlink="(rel) => $emit('unlink', rel)"
+            @locate="(uuid) => $emit('locate', uuid)"
           />
         </el-tab-pane>
 
-        <el-tab-pane label="治疗方案" name="治疗方案">
+        <el-tab-pane label="推荐干预" name="推荐干预">
           <div class="tab-header">
-            <span class="tab-desc">匹配的临床干预与治疗方案</span>
-            <el-button type="primary" plain size="small" @click="$emit('open-bind', '治疗方案')">+ 新增方案关联</el-button>
+            <span class="tab-desc">匹配的临床干预与治疗建议</span>
+            <el-button type="primary" plain size="small" @click="$emit('open-bind', '推荐干预')">+ 关联干预方案</el-button>
           </div>
-          <RelationshipTable 
-            :data="getRelationshipsByType('治疗方案')" 
+          <RelationshipList 
+            :data="getRelationshipsByType('推荐干预')" 
             @update-prop="(rel, val) => $emit('update-edge', rel, val)"
             @unlink="(rel) => $emit('unlink', rel)"
+            @locate="(uuid) => $emit('locate', uuid)"
           />
         </el-tab-pane>
 
-        <el-tab-pane label="推荐阅读/工具" name="recommend">
+        <el-tab-pane label="知识科普" name="recommend">
           <div class="tab-header">
-            <span class="tab-desc">推荐的文章、测评量表等知识元</span>
+            <span class="tab-desc">推荐的科普阅读、测评工具等知识元</span>
             <div class="flex gap-2">
-              <el-button type="success" plain size="small" @click="$emit('open-bind', '推荐文章')">+ 推荐文章</el-button>
-              <el-button type="warning" plain size="small" @click="$emit('open-bind', '推荐测评')">+ 推荐量表</el-button>
+              <el-button type="success" plain size="small" @click="$emit('open-bind', '科普阅读')">+ 关联文章</el-button>
             </div>
           </div>
-          <RelationshipTable 
-            :data="[...getRelationshipsByType('推荐文章'), ...getRelationshipsByType('推荐测评')]" 
+          <RelationshipList 
+            :data="getRelationshipsByType('科普阅读')" 
             @update-prop="(rel, val) => $emit('update-edge', rel, val)"
             @unlink="(rel) => $emit('unlink', rel)"
+            @locate="(uuid) => $emit('locate', uuid)"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane label="政策法规" name="policy">
+          <div class="tab-header">
+            <span class="tab-desc">相关的校园政策、法律及应急条款</span>
+            <el-button type="info" plain size="small" @click="$emit('open-bind', '依据政策')">+ 关联政策</el-button>
+          </div>
+          <RelationshipList 
+            :data="getRelationshipsByType('依据政策')" 
+            @update-prop="(rel, val) => $emit('update-edge', rel, val)"
+            @unlink="(rel) => $emit('unlink', rel)"
+            @locate="(uuid) => $emit('locate', uuid)"
           />
         </el-tab-pane>
 
@@ -141,10 +156,11 @@
            <div class="tab-header">
             <span class="tab-desc">图谱中该节点发出的所有其他类型连线</span>
           </div>
-          <RelationshipTable 
+          <RelationshipList 
             :data="getOtherRelationships()" 
             @update-prop="(rel, val) => $emit('update-edge', rel, val)"
             @unlink="(rel) => $emit('unlink', rel)"
+            @locate="(uuid) => $emit('locate', uuid)"
           />
         </el-tab-pane>
       </el-tabs>
@@ -153,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import RelationshipTable from './RelationshipTable.vue'
+import RelationshipList from './RelationshipList.vue'
 import type { GraphNode, NodeSchema } from '../../types/graph'
 
 const props = defineProps<{
@@ -173,6 +189,7 @@ const emit = defineEmits<{
   (e: 'open-bind', type: string): void
   (e: 'unlink', rel: any): void
   (e: 'update-edge', rel: any, val: number): void
+  (e: 'locate', targetUuid: string): void
 }>()
 
 const getRelationshipsByType = (type: string) => {
@@ -182,7 +199,7 @@ const getRelationshipsByType = (type: string) => {
 
 const getOtherRelationships = () => {
   if (!props.relationships) return []
-  const knownTypes = ['具有症状', '治疗方案', '推荐文章', '推荐测评']
+  const knownTypes = ['临床症状', '推荐干预', '科普阅读', '依据政策', '测评建议']
   return props.relationships.filter((r: any) => r && !knownTypes.includes(r.type))
 }
 

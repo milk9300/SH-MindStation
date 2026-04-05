@@ -1,17 +1,17 @@
 {
 	"pages": [
 		{
-			"path": "pages/home/index",
-			"style": {
-				"navigationBarTitleText": "心邻空间",
-				"navigationStyle": "custom"
-			}
-		},
-		{
 			"path": "pages/chat/index",
 			"style": {
 				"navigationBarTitleText": "AI 心理咨询",
+				"navigationStyle": "custom",
 				"backgroundColor": "#F7FAF9"
+			}
+		},
+		{
+			"path": "pages/home/index",
+			"style": {
+				"navigationBarTitleText": "科普文章"
 			}
 		},
 		{
@@ -47,7 +47,7 @@
 		{
 			"path": "pages/discovery/index",
 			"style": {
-				"navigationBarTitleText": "探索发现"
+				"navigationBarTitleText": "心理测评"
 			}
 		},
 		{
@@ -69,6 +69,24 @@
 				"navigationBarTitleText": "完善档案",
 				"navigationStyle": "custom"
 			}
+		},
+		{
+			"path": "pages/knowledge/index",
+			"style": {
+				"navigationBarTitleText": "发现知识"
+			}
+		},
+		{
+			"path": "pages/knowledge/detail",
+			"style": {
+				"navigationBarTitleText": "知识库深度解析"
+			}
+		},
+		{
+			"path": "pages/knowledge/entity",
+			"style": {
+				"navigationBarTitleText": "详情内容"
+			}
 		}
 	],
 	"globalStyle": {
@@ -76,38 +94,6 @@
 		"navigationBarTitleText": "SH MindStation",
 		"navigationBarBackgroundColor": "#F7FAF9",
 		"backgroundColor": "#F7FAF9"
-	},
-	"tabBar": {
-		"color": "#7D8E86",
-		"selectedColor": "#8ABBA1",
-		"borderStyle": "white",
-		"backgroundColor": "#ffffff",
-		"list": [
-			{
-				"pagePath": "pages/home/index",
-				"text": "首页",
-				"iconPath": "static/tab/home.png",
-				"selectedIconPath": "static/tab/home-active.png"
-			},
-			{
-				"pagePath": "pages/chat/index",
-				"text": "咨询",
-				"iconPath": "static/tab/chat.png",
-				"selectedIconPath": "static/tab/chat-active.png"
-			},
-			{
-				"pagePath": "pages/discovery/index",
-				"text": "发现",
-				"iconPath": "static/tab/discovery.png",
-				"selectedIconPath": "static/tab/discovery-active.png"
-			},
-			{
-				"pagePath": "pages/profile/index",
-				"text": "我的",
-				"iconPath": "static/tab/profile.png",
-				"selectedIconPath": "static/tab/profile-active.png"
-			}
-		]
 	},
 	"uniIdRouter": {}
 }

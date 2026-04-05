@@ -43,6 +43,17 @@
         <el-table-column prop="target_detail" label="操作详述" min-width="250" show-overflow-tooltip />
         <el-table-column prop="ip_address" label="IP 地址" width="140" />
       </el-table>
+
+      <div class="pagination-footer">
+        <el-pagination
+          v-model:current-page="currentPage"
+          :page-size="20"
+          :total="total"
+          layout="prev, pager, next, total"
+          background
+          @current-change="fetchLogs"
+        />
+      </div>
     </el-card>
   </div>
 </template>
@@ -56,6 +67,8 @@ import { formatDateTime } from '../utils/format'
 const loading = ref(false)
 const filterModule = ref('')
 const logs = ref([])
+const total = ref(0)
+const currentPage = ref(1)
 
 const filteredLogs = computed(() => {
   if (!filterModule.value) return logs.value
@@ -65,8 +78,11 @@ const filteredLogs = computed(() => {
 const fetchLogs = async () => {
   loading.value = true
   try {
-    const res: any = await apiClient.get('/audit/')
-    logs.value = res
+    const res: any = await apiClient.get('/audit/', {
+      params: { page: currentPage.value, action_module: filterModule.value }
+    })
+    logs.value = Array.isArray(res) ? res : (res.results || [])
+    total.value = res.count || logs.value.length
   } catch (e) {
     ElMessage.error('获取审计日志失败')
   } finally {
@@ -102,5 +118,10 @@ onMounted(fetchLogs)
 .header-ops {
   display: flex;
   align-items: center;
+}
+.pagination-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

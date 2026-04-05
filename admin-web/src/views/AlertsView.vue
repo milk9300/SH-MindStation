@@ -57,6 +57,17 @@
       </el-table-column>
     </el-table>
 
+    <div class="pagination-footer">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="20"
+        :total="total"
+        layout="prev, pager, next, total"
+        background
+        @current-change="fetchAlerts"
+      />
+    </div>
+
     <!-- 弹窗：干预处理 -->
     <el-dialog v-model="dialogVisible" title="高危预警处理跟进" width="50%">
       <div v-if="currentAlert">
@@ -106,6 +117,8 @@ import { formatDateTime } from '../utils/format'
 
 const tableData = ref([])
 const loading = ref(false)
+const total = ref(0)
+const currentPage = ref(1)
 
 const dialogVisible = ref(false)
 const currentAlert = ref<any>(null)
@@ -130,9 +143,11 @@ const getStatusLabel = (status: string) => {
 const fetchAlerts = async () => {
   loading.value = true
   try {
-    const response = await apiClient.get('/alerts/')
-    // console.log(response);
-    tableData.value = response as any
+    const response: any = await apiClient.get('/alerts/', {
+      params: { page: currentPage.value }
+    })
+    tableData.value = Array.isArray(response) ? response : (response.results || [])
+    total.value = response.count || tableData.value.length
   } catch (error) {
     ElMessage.error('无法拉取预警记录')
   } finally {
@@ -189,5 +204,10 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   font-weight: bold;
+}
+.pagination-footer {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>
