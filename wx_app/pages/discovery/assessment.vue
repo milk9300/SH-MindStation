@@ -107,7 +107,7 @@ import { ref, computed, nextTick } from 'vue'
 import request from '@/utils/request.js'
 import LocationCard from '@/components/cards/LocationCard.vue'
 
-const scale_id = 'scale_campus_life_v1'
+const scale_id = ref('')
 const state = ref('intro')
 const loading = ref(false)
 const session_id = ref(null)
@@ -118,6 +118,11 @@ const trigger_msg_id = ref('')
 
 import { onLoad } from '@dcloudio/uni-app'
 onLoad((options) => {
+	if (options.id) {
+		scale_id.value = options.id
+	} else {
+		scale_id.value = 'scale_campus_life_v1'
+	}
 	if (options.record_id) {
 		fetchRecord(options.record_id)
 	}
@@ -195,7 +200,7 @@ const startAssessment = async () => {
 	loading.value = true
 	try {
 		const res = await request({
-			url: `/scales/${scale_id}/start/`,
+			url: `/scales/${scale_id.value}/start/`,
 			method: 'POST'
 		})
 		session_id.value = res.session_id
