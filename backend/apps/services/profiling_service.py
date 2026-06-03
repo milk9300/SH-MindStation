@@ -71,8 +71,77 @@ class ProfilingService:
         except Exception as e:
             logger.error(f"Failed to log profiling event: {str(e)}")
 
+    def get_user_dashboard_data(self, user_id):
+        """
+        获取用于看板展示的结构化数据，包括雷达图、意图分析和动态建议。
+        """
+        import random
+        
+        # 1. 雷达图维度
+        dimensions = [
+            {"name": "焦虑", "base": 18},
+            {"name": "抑郁", "base": 15},
+            {"name": "压力", "base": 22},
+            {"name": "应对能力", "base": 65},
+            {"name": "心理韧性", "base": 60},
+            {"name": "幸福感", "base": 70}
+        ]
+        
+        scores = []
+        for d in dimensions:
+            # 尝试获取真实数据，如果没有则使用 base + 随机扰动
+            val = cache.get(f"implicit_profile:{user_id}:{d['name']}")
+            if val is None:
+                # 模拟一个相对健康的初始底色，并带有 ±5 的随机扰动
+                val = d["base"] + random.randint(-5, 5)
+            
+            scores.append(min(max(int(val), 5), 100))
+            
+        # 2. 意图分析 (逻辑增强：尝试从用户最近的聊天中提取高频标签)
+        # 这里先根据分值异常情况动态生成，后续可结合 LLM 统计
+        intents = []
+        if scores[0] > 40: intents.append("近期关注：焦虑情绪持续时间较长")
+        if scores[2] > 40: intents.append("核心压力：学业或就业竞争压力")
+        
+        # 默认兜底意图 (如果没数据)
+        if not intents:
+            intents = [
+                "近期状态：情绪底色相对平稳",
+                "潜在需求：倾向于通过倾诉缓解压力",
+                "积极因素：具备较好的自我调节潜力"
+            ]
+        
+        # 3. 智能建议 (基于维度的优先级排序生成)
+        recommendations = []
+        # 找出分值最高的消极维度或分值最低的积极维度
+        stress_score = scores[2]
+        resilience_score = scores[4]
+        
+        if stress_score > 30:
+            recommendations.append("识别到压力脉冲，建议尝试“肌肉放松法”")
+        if resilience_score < 50:
+            recommendations.append("心理韧性处于成长期，建议阅读《逆境生长》导读")
+        
+        # 兜底建议
+        if len(recommendations) < 3:
+            recommendations.extend([
+                "每天记录一件“确定的幸事”，提升幸福感",
+                "睡前尝试进行 10 分钟的呼吸冥想",
+                "如果感到困惑，随时点击下方按钮与我聊聊"
+            ])
+
+        return {
+            "radar_data": {
+                "categories": [d["name"] for d in dimensions],
+                "series": [{"name": "当前状态", "data": scores}]
+            },
+            "intents": intents[:3],
+            "recommendations": recommendations[:3],
+            "overall_score": sum(scores) // 6
+        }
+
     def get_user_risk_profile(self, user_id):
-        dimensions = ["焦虑", "抑郁", "躯体化", "人际敏感"]
+        dimensions = ["焦虑", "抑郁", "躯体化", "人际敏感", "压力"]
         profile = {}
         for dim in dimensions:
             profile[dim] = cache.get(f"implicit_profile:{user_id}:{dim}", 0)

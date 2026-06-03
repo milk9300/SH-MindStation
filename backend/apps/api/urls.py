@@ -19,7 +19,8 @@ from .views import (
     EmergencyPlanViewSet,
     STTAPIView,
     GuidanceQuestionListView,
-    ArticleCommentViewSet
+    ArticleCommentViewSet,
+    UserDashboardView
 )
 from .graph_views import (
     GraphDumpView, EntityDetailView, EdgeManagementView, EntitySearchView, EntityCreateView,
@@ -59,5 +60,6 @@ urlpatterns = [
     path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('chat/stt/', STTAPIView.as_view(), name='chat-stt'),
     path('guidance-questions/', GuidanceQuestionListView.as_view(), name='guidance-questions'),
+    path('user/dashboard/', UserDashboardView.as_view(), name='user-dashboard'),
     path('', include(router.urls)),
 ]

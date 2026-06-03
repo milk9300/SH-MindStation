@@ -69,7 +69,7 @@ class CrisisAlertLog(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='crisis_alerts')
     handler = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='handled_alerts')
-    message = models.OneToOneField(ChatMessage, on_delete=models.CASCADE)
+    message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, null=True, blank=True, related_name='crisis_alerts')
     risk_level = models.CharField("风险等级", max_length=20)
     trigger_symptom = models.CharField("触发症状", max_length=100)
     status = models.CharField("处理状态", max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING)

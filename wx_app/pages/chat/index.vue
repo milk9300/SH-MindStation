@@ -266,6 +266,27 @@ const generateSessionId = () => {
 }
 
 // 5. 对话核心流程
+// [新增] 打字机效果模拟函数
+const typeText = (messageObj, fullText, speed = 30) => {
+	return new Promise((resolve) => {
+		let currentText = ''
+		let index = 0
+		const timer = setInterval(() => {
+			if (index < fullText.length) {
+				currentText += fullText[index]
+				messageObj.content = currentText
+				index++
+				// 每隔几个字符滚动一次，避免过于频繁
+				if (index % 3 === 0) scrollToBottom()
+			} else {
+				clearInterval(timer)
+				scrollToBottom()
+				resolve()
+			}
+		}, speed)
+	})
+}
+
 const sendMessage = async () => {
 	const text = inputText.value.trim()
 	if (!text || isLoading.value) return
@@ -282,24 +303,35 @@ const sendMessage = async () => {
 			method: 'POST',
 			data: { session_id: sessionId.value, content: text }
 		})
+		
 		if (data && data.reply) {
-			messages.value.push({
+			// 1. 创建 AI 消息占位 (内容初始为空)
+			const aiMsg = {
+				id: data.id, // [新增] 捕获后端返回的消息 ID
 				role: 'ai',
-				content: data.reply,
-				options: data.options || [],
+				content: '',
+				options: [], // 选项等打完字再出
 				cards: data.structured_cards || [],
 				suggested_assessment: data.suggested_assessment || null,
 				knowledge_base_uuid: data.knowledge_base_uuid,
 				isNew: true
-			})
+			}
+			messages.value.push(aiMsg)
+			
+			// 2. 隐藏加载状态，开始打字
+			isLoading.value = false
+			await typeText(aiMsg, data.reply, 30)
+			
+			// 3. 打字结束，展示选项和卡片
+			aiMsg.options = data.options || []
+			
 			if (data.debug_slots) currentSlots.value = data.debug_slots
-			// 如果是新会话，刷新一下历史列表以反映最新状态
 			fetchHistoryList()
 		}
 	} catch (err) {
 		console.error('Chat error:', err)
-	} finally {
 		isLoading.value = false
+	} finally {
 		scrollToBottom()
 	}
 }
@@ -316,15 +348,20 @@ const handleOptionClick = async (option) => {
 			data: { session_id: sessionId.value, selected_node_uuid: option.uuid, content: '' }
 		})
 		if (data && data.reply) {
-			messages.value.push({
+			const aiMsg = {
+				id: data.id, // [新增] 捕获后端返回的消息 ID
 				role: 'ai',
-				content: data.reply,
-				options: data.options || [],
+				content: '',
+				options: [],
 				cards: data.structured_cards || [],
 				suggested_assessment: data.suggested_assessment || null,
 				knowledge_base_uuid: data.knowledge_base_uuid,
 				isNew: true
-			})
+			}
+			messages.value.push(aiMsg)
+			isLoading.value = false
+			await typeText(aiMsg, data.reply, 30)
+			aiMsg.options = data.options || []
 		}
 	} catch (err) {} finally {
 		isLoading.value = false

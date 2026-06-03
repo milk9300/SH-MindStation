@@ -343,7 +343,14 @@ class ChatService:
                 config = DIMENSION_MAP.get(dim)
                 reply_text = config["templates"]["new"] if is_new_session else config["templates"]["ongoing"]
 
-                response_body["reply"] = reply_text
+                # [修复] 避免干预话术覆盖大模型的原始同理心回复
+                original_reply = response_body.get("reply", "")
+                if original_reply:
+                    # 使用自然过渡词衔接
+                    response_body["reply"] = f"{original_reply}\n\n同时，{reply_text}"
+                else:
+                    response_body["reply"] = reply_text
+
                 response_body["options"] = [] 
                 response_body["suggested_assessment"] = {
                     "scale_id": config["scale_id"],
@@ -352,7 +359,7 @@ class ChatService:
                 }
                 response_body["stage"] = "INTERVENTION" 
 
-                ChatMessage.objects.create(
+                ai_msg = ChatMessage.objects.create(
                     session=session,
                     role="ai",
                     content=response_body["reply"],
@@ -360,6 +367,7 @@ class ChatService:
                     structured_cards=[],
                     intent_type="ASSESSMENT_TRIGGER"
                 )
+                response_body["id"] = ai_msg.id
                 
                 cache.delete(trigger_key)
                 
@@ -373,11 +381,12 @@ class ChatService:
                 return response_body
         
         # 如果没有触发干预，则正常记录 AI 回复
-        ChatMessage.objects.create(
+        ai_msg = ChatMessage.objects.create(
             session=session, role="ai", content=response_body["reply"],
             structured_cards=response_body.get("structured_cards", []), 
             intent_type=getattr(final_res, 'intent_type', 'CHAT')
         )
+        response_body["id"] = ai_msg.id
         return response_body
     
     def generate_assessment_feedback(self, user, session_id, report):

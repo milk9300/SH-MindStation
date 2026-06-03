@@ -13,6 +13,9 @@
 				</view>
 			</view>
 		</view>
+
+		<!-- [新增] 心理健康看板组件 -->
+		<PsychologicalDashboard :dashboardData="dashboardData" />
 		
 		<view class="menu-group">
 			<view class="menu-item" @click="goToMood">
@@ -53,6 +56,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import request from '@/utils/request.js'
+import PsychologicalDashboard from '@/components/profile/PsychologicalDashboard.vue'
 
 const userInfo = ref({
 	nickname: '匿名同学',
@@ -60,6 +65,13 @@ const userInfo = ref({
 	campus_id: '未绑定',
 	phone: '',
 	avatar_url: ''
+})
+
+const dashboardData = ref({
+	radar_data: { categories: [], series: [] },
+	intents: [],
+	recommendations: [],
+	overall_score: 0
 })
 
 onMounted(() => {
@@ -76,7 +88,19 @@ onMounted(() => {
 			}
 		} catch (e) {}
 	}
+	fetchDashboardData()
 })
+
+const fetchDashboardData = async () => {
+	try {
+		const data = await request({ url: '/user/dashboard/', method: 'GET' })
+		if (data) {
+			dashboardData.value = data
+		}
+	} catch (e) {
+		console.error('Failed to fetch dashboard data', e)
+	}
+}
 
 const goToMood = () => {
 	uni.navigateTo({ url: '/pages/mood/index' })

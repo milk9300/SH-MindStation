@@ -129,7 +129,7 @@ class ChatSessionSerializer(serializers.ModelSerializer):
 
 class CrisisAlertLogSerializer(serializers.ModelSerializer):
     user_info = serializers.SerializerMethodField()
-    message_content = serializers.CharField(source='message.content', read_only=True)
+    message_content = serializers.CharField(source='message.content', read_only=True, default='[DFA中间件直接拦截，无消息记录]')
     handler_name = serializers.CharField(source='handler.real_name', read_only=True, default='')
 
     class Meta:

@@ -42,6 +42,52 @@ class DFAMiddleware:
             logger.error(f"[DFAMiddleware] Failed to build DFA automaton: {e}")
             self.is_built = False
 
+    def _resolve_user_from_token(self, request):
+        """
+        手动从 Authorization 请求头解析 DRF Token，获取关联用户。
+        原因：DRF TokenAuthentication 在 View 层执行，中间件层 request.user 始终是 AnonymousUser。
+        """
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if not auth_header:
+            return None
+        
+        # 兼容 "Token xxx" 和 "Bearer xxx" 两种格式
+        parts = auth_header.split()
+        if len(parts) != 2:
+            return None
+        
+        token_key = parts[1]
+        
+        try:
+            from rest_framework.authtoken.models import Token
+            token = Token.objects.select_related('user').get(key=token_key)
+            return token.user
+        except Exception:
+            return None
+
+    def _record_crisis_alert(self, user, matched_word, priority, content):
+        """
+        将 DFA 硬熔断事件持久化到 CrisisAlertLog，确保最高危拦截也能被后台管理平台追踪。
+        注意：此处是中间件层，尚无 ChatMessage 记录，因此 message 字段设为 None。
+        """
+        try:
+            from apps.models import CrisisAlertLog
+
+            # 映射优先级到可读等级名称
+            level_label = "极高危" if priority >= 100 else "高危"
+
+            CrisisAlertLog.objects.create(
+                user=user,
+                message=None,       # 中间件层直接拦截，无对应 ChatMessage
+                risk_level=level_label,
+                trigger_symptom=f"[DFA熔断] 命中关键词「{matched_word}」，输入: {content[:30]}...",
+                status=CrisisAlertLog.StatusChoices.PENDING
+            )
+            logger.info(f"[DFAMiddleware] CrisisAlertLog created for user {user.id} ({user.username}) | word={matched_word}")
+        except Exception as e:
+            # 审计写入失败不应阻塞熔断响应，降级为日志告警
+            logger.error(f"[DFAMiddleware] Failed to persist CrisisAlertLog: {e}")
+
     def __call__(self, request):
         if request.method == "POST" and "application/json" in request.content_type:
             try:
@@ -51,9 +97,17 @@ class DFAMiddleware:
                     if content and self.is_built:
                         for end_index, (matched_word, priority) in self.automaton.iter(content):
                             # [关键改进] 仅对高危 (80) 及 极高危 (100) 级别的词汇执行硬熔断
-                            # 中危 (50) 如“挂科”及更低级别词汇放行，交给后端的 ChatService 处理“软干预”
+                            # 中危 (50) 如"挂科"及更低级别词汇放行，交给后端的 ChatService 处理"软干预"
                             if priority >= 80:
-                                logger.warning(f"[DFA RUPTURE] Intercepted High-Risk request from {request.user}. Word: {matched_word}, Priority: {priority}")
+                                logger.warning(f"[DFA RUPTURE] Intercepted High-Risk request. Word: {matched_word}, Priority: {priority}")
+                                
+                                # [关键修复] 手动从 Token 解析用户，写入 CrisisAlertLog
+                                # DRF 认证在 View 层，中间件层 request.user 是 AnonymousUser
+                                resolved_user = self._resolve_user_from_token(request)
+                                if resolved_user:
+                                    self._record_crisis_alert(resolved_user, matched_word, priority, content)
+                                else:
+                                    logger.warning(f"[DFAMiddleware] Cannot resolve user from token, alert log skipped. Content: {content[:20]}...")
                                 
                                 return JsonResponse({
                                     "error": "内容违规或触发安全预警，请求已被拦截",

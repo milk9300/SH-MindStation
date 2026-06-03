@@ -719,16 +719,16 @@ class AssessmentScaleViewSet(viewsets.ModelViewSet):
                 if trigger_msg_id:
                     try:
                         msg = ChatMessage.objects.get(id=trigger_msg_id)
-                        # 更新卡片状态为已完成
-                        if not msg.suggested_assessment:
-                            msg.suggested_assessment = {}
-                        msg.suggested_assessment['is_completed'] = True
-                        msg.suggested_assessment['result'] = {
+                        # 显式复制并更新，确保 Django 检测到 JSONField 变更
+                        assessment_data = (msg.suggested_assessment or {}).copy()
+                        assessment_data['is_completed'] = True
+                        assessment_data['result'] = {
                             'score': report.get('total_score'),
                             'level': report.get('level'),
                             'record_id': report.get('record_id')
                         }
-                        msg.save()
+                        msg.suggested_assessment = assessment_data
+                        msg.save(update_fields=['suggested_assessment'])
                         
                         # 由 AI 发起针对性的回馈回复
                         chat_service.generate_assessment_feedback(request.user, msg.session.id, report)
@@ -917,3 +917,19 @@ class ArticleCommentViewSet(viewsets.ModelViewSet):
         comment.save()
         return Response({"status": "audited", "is_passed": is_passed})
 # endregion
+
+from apps.services.profiling_service import profiling_service
+
+class UserDashboardView(APIView):
+    """
+    用户心理健康看板数据接口：汇总返回雷达图数据、意图分析及智能建议。
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        try:
+            data = profiling_service.get_user_dashboard_data(request.user.id)
+            return Response(data)
+        except Exception as e:
+            logger.error(f"Failed to fetch dashboard data: {str(e)}")
+            return Response({"error": "无法加载画像数据"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -70,8 +70,9 @@ class AssessmentService:
                 logger.error(f"Failed to create CrisisAlertLog during assessment: {str(e)}")
 
         # 3. CAT 自适应逻辑: 检查当前维度风险
+        should_skip_dimension = self._check_cat_skip(state, dimension)
         
-        # 3. 获取下一题
+        # 4. 获取下一题
         next_q = self._get_next_question(state, question, should_skip_dimension)
         
         if not next_q:

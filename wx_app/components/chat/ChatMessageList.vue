@@ -24,6 +24,8 @@
 				<view class="message-main">
 					<view class="bubble" :class="msg.role">
 						<text>{{ msg.content }}</text>
+						<!-- [新增] 如果是 AI 正在说话且没有选项（说明还在打字中），显示光标 -->
+						<text v-if="msg.role === 'ai' && (!msg.options || !msg.options.length) && idx === messages.length - 1" class="typing-cursor">|</text>
 					</view>
 					
 					<!-- 选项渲染 (只在最后一条 AI 消息显示) -->
@@ -141,6 +143,20 @@ const goToKnowledgeBase = (uuid) => {
 .bubble { padding: 28rpx 36rpx; border-radius: $sh-radius-md; font-size: 30rpx; line-height: 1.6; word-break: break-all;
 	&.ai { background: #fff; border-top-left-radius: 4rpx; box-shadow: 0 4rpx 15rpx rgba(0,0,0,0.04); color: $sh-text-main; }
 	&.user { background: $sh-primary; color: #fff; border-top-right-radius: 4rpx; margin-left: auto; }
+}
+
+.typing-cursor {
+	display: inline-block;
+	width: 4rpx;
+	color: $sh-primary;
+	margin-left: 6rpx;
+	font-weight: bold;
+	animation: blink 0.8s infinite;
+}
+
+@keyframes blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0; }
 }
 
 .options-container { margin-top: 24rpx; }

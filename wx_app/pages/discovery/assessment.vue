@@ -437,14 +437,17 @@ const reStart = () => {
 }
 
 .options-container {
-	padding: 20rpx 0 60rpx 92rpx; 
-	display: flex; flex-wrap: wrap; gap: 20rpx;
+	padding: 10rpx 40rpx 60rpx 92rpx; 
+	display: flex; 
+	flex-direction: column;
+	gap: 24rpx;
 	.option-bubble {
 		background: #fff; color: #5BB18C; border: 2rpx solid #5BB18C;
-		padding: 18rpx 36rpx; border-radius: 40rpx; font-size: 28rpx;
+		padding: 24rpx 40rpx; border-radius: 20rpx 40rpx 40rpx 20rpx; font-size: 28rpx;
 		transition: all 0.2s;
-		min-width: 140rpx; text-align: center;
-		&:active { background: #5BB18C; color: #fff; transform: scale(0.95); }
+		width: fit-content; max-width: 100%;
+		box-shadow: 0 4rpx 12rpx rgba(91,177,140,0.1);
+		&:active { background: #5BB18C; color: #fff; transform: scale(0.98); }
 	}
 }
 
